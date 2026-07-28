@@ -104,6 +104,72 @@ public class PointArchiverPostgresql extends PointArchiver {
     return;
   }
 
+ /**
+  * Main loop for the archiving thread.
+  *
+  * OVERRIDE FROM ARCHIVER CLASS DUE TO NEED
+  * FOR ARCHIVING TO INFLUXDB IN REALTIME.
+  */
+  public void run() {
+    setName("Point Archiver");
+
+    RelTime sleeptime1 = RelTime.factory(25000);
+    RelTime sleeptime2 = RelTime.factory(500);
+
+    while (true) {
+      boolean flushing = false;
+      if (itsShuttingDown) {
+        flushing = true;
+      }
+
+      int counter = 0;
+      Enumeration<PointDescription> keys = itsBuffer.keys();
+      try {
+        while (keys.hasMoreElements()) {
+          PointDescription pm = keys.nextElement();
+          if (pm == null) {
+            continue;
+          }
+
+          Vector<PointData> thisdata = itsBuffer.get(pm);
+          if (thisdata == null || thisdata.isEmpty()) {
+            // No data to be archived
+            continue;
+          }
+
+          //noinspection StatementWithEmptyBody
+          if (!itsShuttingDown) {
+            // archive immediately to influx, it will handle batching
+            saveNow(pm, thisdata);
+          }
+
+          try {
+            sleeptime2.sleep();
+          } catch (Exception e) {
+            itsLogger.warn("exception caught: " + e);
+          }
+          counter++;
+        }
+      } catch (Exception e) {
+        itsLogger.error("While archiving: " + e);
+        e.printStackTrace();
+      }
+      // if (counter > 0) {
+      // itsLogger.debug("###### Archived/flagged " + counter + " points");
+      // }
+      if (itsShuttingDown && flushing) {
+        // We've just flushed the full archive
+        itsFlushComplete = true;
+        break;
+      }
+      try {
+        sleeptime1.sleep();
+      } catch (Exception e) {
+        itsLogger.warn("exception caught: " + e);
+      }
+    }
+    itsLogger.info("done shutting down");
+  }
   /**
    * Method to do the actual archiving.
    *
