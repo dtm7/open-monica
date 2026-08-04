@@ -43,27 +43,27 @@ public class PointArchiverPostgresql extends PointArchiver {
   protected Connection itsConnection = null;
 
   /**
-    * Database name
+    * Postgres database name
     */
   private final static String theirDatabase = MonitorConfig.getProperty("PsqlDatabase", "testing");
 
   /**
-    * The URL to connect to the server/database.
+    * The name of the postgres database server.
     */
   private final static String theirServer = MonitorConfig.getProperty("PsqlServer", "localhost");
 
   /**
-    * The URL to connect to the server/database.
+    * The port to use when connecting to the server.
     */
   private final static String theirPort = MonitorConfig.getProperty("PsqlPort", "5432");
 
   /**
-    * Influx username
+    * Postgres username
     */
   private final static String theirUsername = MonitorConfig.getProperty("PsqlUsername", "admin");
 
   /**
-    * Influx password
+    * Postgres password
     */
   private final static String theirPassword = MonitorConfig.getProperty("PsqlPassword", "admin");
 
