@@ -11,6 +11,9 @@ import java.sql.*;
 import java.util.*;
 import java.time.*;
 
+import javax.naming.*;
+import javax.sql.*;
+
 import com.sun.jdi.DoubleValue;
 import com.sun.jdi.IntegerValue;
 import com.sun.jdi.LongValue;
@@ -19,6 +22,11 @@ import atnf.atoms.mon.*;
 import atnf.atoms.util.*;
 import atnf.atoms.time.*;
 import atnf.atoms.mon.util.MonitorConfig;
+
+import atnf.atoms.mon.archiver.postgresql.PostgresBatchWriter;
+import atnf.atoms.mon.archiver.postgresql.PostgresBatchPoint;
+
+import org.postgresql.ds.PGPoolingDataSource;
 
 /**
  * Archiver which uses a MySQL database as the back end.
@@ -73,20 +81,35 @@ public class PointArchiverPostgresql extends PointArchiver {
   private String itsURL = null;
   /** The URL to connect to the server/database. */
   //protected String itsURL = "jdbc:mysql://localhost:3306/MoniCA?user=monica&tcpRcvBuf=100000&autoReconnect=true";
+  private PGPoolingDataSource itsPgPool;
+  private PostgresBatchWriter itsWriter;
 
   /** Constructor. */
   public PointArchiverPostgresql() {
     super();
 
     /* Create a URL string incorporating the options set in the config file */
-    itsURL = "jdbc:postgresql://" + theirServer + ":" + theirPort + "/" + theirDatabase + "?user=" + theirUsername + "&password=" + theirPassword;
+    itsURL = "jdbc:postgresql://" + theirServer + ":" + theirPort + "/" + theirDatabase + "?user=" + theirUsername + "&password=" + theirPassword + "?reWriteBatchedInserts=true";
 
     try {
-      itsConnection = DriverManager.getConnection(itsURL);
+      // Instantiate a datasource so that we can use it with out postgres writer class
+
+      itsPgPool = new PGPoolingDataSource();
+      itsPgPool.setDataSourceName("MonicaArchiveWriterPool");
+      itsPgPool.setServerName(theirServer);
+      itsPgPool.setDatabaseName(theirDatabase);
+      itsPgPool.setUser(theirUsername);
+      itsPgPool.setPassword(theirPassword);
+      itsPgPool.setMaxConnections(5);
+
+      // Connection for the base object to use for queries, metadata writes
+      itsConnection = itsPgPool.getConnection();
     } catch (Exception e) {
       itsLogger.error("PointArchiverPostgresql Constructor: " + e.getMessage());
       itsConnection = null;
     }
+
+    itsWriter = new PostgresBatchWriter(itsPgPool);
 
     // Try and create all the tables we need when we first connect
     createTables();
@@ -219,69 +242,44 @@ public class PointArchiverPostgresql extends PointArchiver {
     }
 
     synchronized (alldata) {
-      // Prepared statement SQL. Note that we are making an assumption here that every
-      // data point in this set has the same data type.
-      String sql = "INSERT INTO archive " +
-                   "(ts, bat, point_id, source, " + value_column + ") " +
-                   "VALUES (?, ?, ?, ?, ?)";
 
-      int count = 0;
-      int batchsize = 1000;
-
-      try (PreparedStatement pstmt = itsConnection.prepareStatement(sql)) {
-        itsConnection.setAutoCommit(false);
-
+        // Cycle through all the pointdata for this point, queue for writing
         for (int i = 0; i < alldata.size(); i++) {
           PointData data = (PointData) alldata.get(i);
 
-          // Prepare the "administrative" field values for this data point
-          pstmt.setObject(1, data.getTimestamp().getAsDate().toInstant().atOffset(ZoneOffset.UTC));
-          pstmt.setLong(2, data.getTimestamp().getValue());
-          pstmt.setInt(3, point_id);
-          pstmt.setString(4, data.getSource());
-
-          // The final part of the statement depends on what data type it is
+          // Figure out the data type
+          Object v = null;
           switch (value_column) {
             case "val_float":
-              pstmt.setDouble(5, ((Double) data.getData()).doubleValue());
+              v = ((Double) data.getData()).doubleValue();
               break;
             case "val_bigint":
-              pstmt.setLong(5, ((Long) data.getData()).longValue());
+              v = ((Long) data.getData()).longValue();
               break;
             case "val_int":
-              pstmt.setInt(5, ((Integer) data.getData()).intValue());
+              v = ((Integer) data.getData()).intValue();
               break;
             case "val_string":
-              pstmt.setString(5, ((String) data.getData()));
+              v = ((String) data.getData());
               break;
           }
 
-          pstmt.addBatch();
+          // Create a batch point ready to be written to the write queue
+          PostgresBatchPoint p = new PostgresBatchPoint(
+            data.getTimestamp().getAsDate().toInstant().atOffset(ZoneOffset.UTC),
+            data.getTimestamp().getValue(),
+            point_id,
+            data.getSource(),
+            v
+          );
 
-          if (++count % batchsize == 0) {
-            itsLogger.warn("insertData: " + pstmt.toString());
-            pstmt.executeBatch();
-          }
+          itsLogger.warn("insertData: Queueing point for archival: " + pm.getName() + "." + data.getSource());
+          // Queue point for writing by postgres writer thread
+          itsWriter.enqueue(p);
         }
 
-        // Execute remaining rows outside the loop metric, and commit
-        // the transaction
-        itsLogger.warn("insertData: " + pstmt.toString());
-        pstmt.executeBatch();
-        itsConnection.commit();
-      } catch (SQLException e) {
-        try {
-          // This needs its own explicit exception handling
-          itsConnection.rollback();
-        } catch (SQLException rbe) {
-          itsLogger.error("insertData: " + rbe);
-        }
-
-        itsLogger.warn("insertData " + e);
-      }
-
-      // Finished archiving this data
-      alldata.clear();
+        // All data queued, clear it
+        alldata.clear();
     }
   }
 
