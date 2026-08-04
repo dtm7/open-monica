@@ -10,6 +10,8 @@ package atnf.atoms.mon.externalsystem;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.lang.Integer;
+import java.lang.Byte;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import atnf.atoms.time.*;
 import atnf.atoms.mon.*;
@@ -19,6 +21,9 @@ import atnf.atoms.util.EnumItem;
 import gov.aps.jca.*;
 import gov.aps.jca.dbr.*;
 import gov.aps.jca.event.*;
+import gov.aps.jca.configuration.*;
+
+import com.cosylab.epics.caj.*;
 
 import org.apache.log4j.Logger;
 
@@ -42,6 +47,7 @@ import org.apache.log4j.Logger;
  * 
  * @author David Brodrick
  */
+//public class EPICS extends ExternalSystem implements ContextExceptionListener {
 public class EPICS extends ExternalSystem {
   /** Logger. */
   protected static Logger theirLogger = Logger.getLogger(EPICS.class.getName());
@@ -66,14 +72,31 @@ public class EPICS extends ExternalSystem {
    */
   protected HashMap<String, Vector<Object[]>> itsRequiresMonitor = new HashMap<String, Vector<Object[]>>();
 
+  /**
+   * Count of the number of channel access connections currently lost
+   */
+  protected AtomicInteger itsLostConnectionCount = new AtomicInteger();
+
+
   public EPICS(String[] args) {
     super("EPICS");
-
     // Get the JCALibrary instance.
     JCALibrary jca = JCALibrary.getInstance();
     try {
-      // Create context with default configuration values.
-      itsContext = jca.createContext(JCALibrary.CHANNEL_ACCESS_JAVA);
+      // Set default max_array_bytes to 21000 to cater for at least 512 epics strings (512 * 40 bytes)
+      // but allow it to be overridden by the command line.
+      int mab = jca.getPropertyAsInt("com.cosylab.epics.caj.CAJContext.max_array_bytes", 21000);
+      System.out.println("EPICS: CAJ max_array_bytes is " + mab);
+      // See https://epics.anl.gov/bcda/jca/jca/2.1.2/tutorial.html#5 part 7)
+      // Create the Configuration object for our context.
+      DefaultConfiguration conf= new DefaultConfiguration("myContext");
+      // Define the context class.
+      conf.addAttribute("class", JCALibrary.CHANNEL_ACCESS_JAVA);
+      // Set the max array length
+      conf.addAttribute("max_array_bytes", String.valueOf(mab));
+      // Create a context with this configuration.
+      itsContext = jca.createContext(conf);
+      //jca.listProperties();
     } catch (Exception e) {
       theirLogger.error("Creating Context: " + e);
     }
@@ -85,6 +108,28 @@ public class EPICS extends ExternalSystem {
     } catch (Exception e) {
       theirLogger.error("Creating ChannelConnector: " + e);
     }
+  }
+
+  /**
+   * get the number of lost Channel Access Connections
+   *
+   * @return number of lost connections
+   */
+  public int getNumLostConnections() {
+    return itsLostConnectionCount.get();
+  }
+
+  /**
+   * get the number of pending EPICS connections
+   *
+   * @return number of pending conenctions
+   */
+  public int getNumPendingConnections() {
+    return itsNeedsConnecting.size();
+  }
+
+  public int getNumActiveConnections() {
+    return itsChannelMap.size();
   }
 
   /**
@@ -124,6 +169,7 @@ public class EPICS extends ExternalSystem {
 
           if (thischan.getConnectionState() == Channel.ConnectionState.CONNECTED) {
             // Channel is connected, request data via a channel access 'get'
+
             try {
               asynchCollecting(points[i]);
               DBRType type = thistrans.getType();
@@ -138,9 +184,9 @@ public class EPICS extends ExternalSystem {
                 type = DBRType.forName(tempdbr.getType().getName().replaceAll("DBR_", "DBR_STS_").replaceAll("_ENUM", "_STRING"));
                 thistrans.setType(type);
               }
-
+              int nElem = thischan.getElementCount();
               // Do the actual CA get operation
-              thischan.get(type, 1, listener);
+              thischan.get(type, nElem, listener);
             } catch (Exception e) {
               // Maybe the channel just became disconnected
               points[i].firePointEvent(new PointEvent(this, new PointData(points[i].getFullName()), true));
@@ -160,6 +206,7 @@ public class EPICS extends ExternalSystem {
       theirLogger.error("In getData method, while flushing IO: " + e);
     }
   }
+
 
   /** Send a value from MoniCA to EPICS. */
   public void putData(PointDescription desc, PointData pd) throws Exception {
@@ -204,6 +251,14 @@ public class EPICS extends ExternalSystem {
     }
   }
 
+//  public void contextException(ContextExceptionEvent ev) {
+//     System.out.println(ev.toString());
+//  }
+
+//  public void contextVirtualCircuitException(ContextVirtualCircuitExceptionEvent ev) {
+//      System.out.println(ev.toString());
+//  }
+
   /**
    * Thread which connects to EPICS channels and configures 'monitor' updates for points which request it.
    */
@@ -216,9 +271,14 @@ public class EPICS extends ExternalSystem {
     /** Channel connect timeout, decreases exponentially down to a minimum */
     private float itsCAConnectTimeout = 30;            // secs
     private float itsMinCAConnectTimeout = (float)0.2; // secs
+    private AbsTime itsStartTime;
+
+    public int itsNewChannels;
+    public int itsPendingChannels;
 
     public ChannelConnector() {
       super("EPICS ChannelConnector");
+      itsStartTime = new AbsTime();
       try {
           String str = System.getenv("EPICS_CA_MAX_SEARCH_PERIOD");
           if (str != null)
@@ -258,10 +318,11 @@ public class EPICS extends ExternalSystem {
             continue;
           }
           try {
+
             // Create the Channel to connect to the PV.
             Channel thischan = itsContext.createChannel(thispv);
             newchannels.add(thischan);
-          } catch (Exception e) {
+           } catch (Exception e) {
             theirLogger.warn("ChannelConnector: Connecting Channel " + thispv + ": " + e);
           }
         }
@@ -269,13 +330,19 @@ public class EPICS extends ExternalSystem {
         // Try to connect to the channels
         try {
           theirLogger.debug("ChannelConnector: Attempting to connect " + newchannels.size() + "/" + asarray.size() + " pending channels");
+          itsNewChannels = newchannels.size();
+          itsPendingChannels = asarray.size();
           itsContext.pendIO(itsCAConnectTimeout);   
         } catch (Exception e) {
-          theirLogger.debug("ChannelConnector: pendIO: " + e);
+          //theirLogger.debug("ChannelConnector: pendIO: " + e);
         }
-	// Reduce the timeout after each attempt, down to a limit.
-	itsCAConnectTimeout = Math.max(itsMinCAConnectTimeout, itsCAConnectTimeout/2);
-
+	// Check if its more than 30 minutes since ChannelConnector was started
+	long minutesSinceStart = (long)(((RelTime)Time.diff(new AbsTime(), itsStartTime)).getAsSeconds())/60;
+	boolean enableConnectSlowdown = minutesSinceStart > 30;
+	if (enableConnectSlowdown) { // Reduce the timeout after each attempt, down to a limit.
+	  itsCAConnectTimeout = Math.max(itsMinCAConnectTimeout, itsCAConnectTimeout/2);
+        }
+	 
         // Check which channels connected successfully
         for (int i = 0; i < newchannels.size(); i++) {
           Channel thischan = newchannels.get(i);
@@ -284,6 +351,10 @@ public class EPICS extends ExternalSystem {
             // This channel connected okay
             itsChannelMap.put(thispv, thischan);
             itsNeedsConnecting.remove(thispv);
+            if (itsConnectionLogMap.get(thispv) == Boolean.FALSE) {
+              itsConnectionLogMap.put(thispv, Boolean.TRUE);
+              itsLostConnectionCount.decrementAndGet();
+            }
           } else {
             // This channel failed to connect
             try {
@@ -292,11 +363,13 @@ public class EPICS extends ExternalSystem {
                 theirLogger.warn("ChannelConnector: Failed to connect to PV " + thispv);
                 // Record that we've logged it
                 itsConnectionLogMap.put(thispv, Boolean.FALSE);
+                itsLostConnectionCount.incrementAndGet();
               }
               thischan.destroy();
             } catch (Exception e) {
               e.printStackTrace();
-              theirLogger.error("ChannelConnector: Destroying channel for " + thispv + ": " + e);
+              theirLogger.error("ChannelConnector: Failed to destroy channel for " + thispv + ": " + e);
+	      thischan.dispose();
             }
           }
         }
@@ -325,11 +398,12 @@ public class EPICS extends ExternalSystem {
               theirLogger.warn("ChannelConnector: ERROR determining native DBRType for " + thispv + " - bad channel state?");
               try {
                 // This channel is broken. Try to reconnect later.
-                itsChannelMap.put(thispv, null);
-                thischan.destroy();
+                itsChannelMap.put(thispv, null);        
                 itsNeedsConnecting.add(thispv);
+		thischan.destroy();
               } catch (Exception f) {
-                theirLogger.error("ChannelConnector: Destroying channel for " + thispv + ": " + e);
+                theirLogger.error("ChannelConnector: Failed to destroy channel for " + thispv + ": " + e);
+		thischan.dispose();
               }
               continue;
             }
@@ -366,13 +440,15 @@ public class EPICS extends ExternalSystem {
                   if (thistype == null) {
                     thischan.addMonitor(Monitor.VALUE | Monitor.ALARM, listener);
                   } else {
-		    theirLogger.debug("ChannelConnector: dbr type of PV " + thispv + " is " + thistype.toString());
+		    //theirLogger.debug("ChannelConnector: dbr type of PV " + thispv + " is " + thistype.toString());
                     // Needs to be monitored so data arrives as a specific type
-                    thischan.addMonitor(thistype, 1, Monitor.VALUE | Monitor.ALARM, listener);
+	            int nElem = thischan.getElementCount();
+		    //System.out.println("ChannelConnector::run " + thischan.getName() + "  nElem = " + nElem + " of " + thistype.toString());
+		    thischan.addMonitor(thistype, nElem, Monitor.VALUE | Monitor.ALARM, listener);
                   }
                   points.remove();
                 } catch (Exception f) {
-                  theirLogger.error("ChannelConnector: Establising Listener " + pointdesc.getFullName() + "/" + thispv + ": " + f);
+                  theirLogger.error("ChannelConnector: Establishing Listener " + pointdesc.getFullName() + "/" + thispv + ": " + f);
                 }
               }
               if (thesepoints.isEmpty()) {
@@ -396,8 +472,10 @@ public class EPICS extends ExternalSystem {
 
         } catch (Exception e) {
         }
-	// Increase time between retries for remaining failed connections
-	itsCASearchPeriod = Math.min(itsMaxCASearchPeriod, itsCASearchPeriod * 2);
+	if (enableConnectSlowdown) { // Increase time between retries for remaining failed connections
+	  itsCASearchPeriod = Math.min(itsMaxCASearchPeriod, itsCASearchPeriod * 2);
+	}
+	//theirLogger.debug("ChannelConnector: " + minutesSinceStart + " minutes, connect timeout = " + itsCAConnectTimeout + " search period = " + itsCASearchPeriod/1000000);
       }
     }
   };
@@ -434,7 +512,7 @@ public class EPICS extends ExternalSystem {
       }
       PointData pd = new PointData(itsPointName);
       try {
-        if (ev.getStatus() == CAStatus.NORMAL && ev.getDBR() != null) {
+	if (ev.getStatus().isSuccessful()) {
           pd = getPDforDBR(ev.getDBR(), itsPointName, itsPV);
         }
       } catch (Exception e) {
@@ -464,8 +542,10 @@ public class EPICS extends ExternalSystem {
         // State has changed, so log a message
         if (ev.isConnected()) {
           theirLogger.info("EPICSListener: Connection restored to PV: " + itsPV);
+          itsLostConnectionCount.decrementAndGet();
         } else {
           theirLogger.warn("EPICSListener: Lost connection to PV: " + itsPV);
+          itsLostConnectionCount.incrementAndGet();
         }
         // Record the state
         itsConnectionLogMap.put(itsPV, Boolean.valueOf(ev.isConnected()));
@@ -485,47 +565,62 @@ public class EPICS extends ExternalSystem {
   /** Decode the value from an EPICS DBR. */
   public PointData getPDforDBR(DBR dbr, String pointname, String pvname) {
     PointData pd = new PointData(pointname);
+    String[] tmp = null;
     Object newval = null;
     boolean alarm = false;
     AbsTime timestamp = new AbsTime();
+    int i;
 
     try {
       int count = dbr.getCount();
-      if (count > 1) {
-        theirLogger.warn("getPDforDBR: " + pvname + ": >1 value received");
-      }
+      //System.out.println("\ngetPDforDBR: " + pvname + " : " + count + " values received");
+      //dbr.printInfo();
       Object rawval = dbr.getValue();
+      
       // Have to switch on type, don't think there's any simpler way
       // to get the individual data as an object type.
-      if (dbr instanceof INT) {
-        newval = new Integer(((int[]) rawval)[0]);
-      } else if (dbr instanceof BYTE) {
-        newval = new Integer(((byte[]) rawval)[0]);
-      } else if (dbr instanceof SHORT) {
-        newval = new Integer(((short[]) rawval)[0]);
-      } else if (dbr instanceof FLOAT) {
-        newval = new Float(((float[]) rawval)[0]);
-      } else if (dbr instanceof DOUBLE) {
-        newval = new Double(((double[]) rawval)[0]);
-      } else if (dbr instanceof STRING) {
-        newval = ((String[]) rawval)[0];
-      } else if (dbr instanceof ENUM) {
-	newval = new Integer(((short[]) rawval)[0]);
-	if (dbr instanceof DBR_LABELS_Enum) {
-	    short idx = ((Integer)newval).shortValue();
-	    String lbl = ((DBR_LABELS_Enum)dbr).getLabels()[idx];
-	    newval = new EnumItem(lbl, idx);
+      if (dbr.isINT()) {
+        newval = new Integer(((int[])rawval)[0]);
+      } else if (dbr.isBYTE()) {
+        newval = new Integer(((byte[])rawval)[0]);
+      } else if (dbr.isSHORT()) {
+        newval = new Integer(((short[])rawval)[0]);
+      } else if (dbr.isFLOAT()) {
+        newval = new Float(((float[])rawval)[0]);
+      } else if (dbr.isDOUBLE()) {
+        newval = new Double(((double[])rawval)[0]);
+      } else if (dbr.isSTRING()) {
+        if (count <= 1) {
+	  newval = ((String[]) rawval)[0];
+	} else {  // array of string (or char) from a waveform pv
+	  StringBuffer buf = new StringBuffer();    
+	  for (i = 0; i < count; ++i) {
+	     String str = ((String[])rawval)[i];
+	     if (str.isEmpty()) break;
+	     Byte b = Byte.parseByte(str);  
+	     buf.append((char)(b.byteValue()));
+	  }
+	  newval = new String(buf);
+	  newval = ((String)newval).trim();
 	}
+	//System.out.println(pvname +"\t\"" + (String)newval + "\"");	
+      } else if (dbr.isLABELS()) {
+	short idx = ((Integer[])rawval)[0].shortValue();
+	String lbl = ((DBR_LABELS_Enum)dbr).getLabels()[idx];
+	newval = new EnumItem(lbl, idx);
+      } else if (dbr.isENUM()) {
+        newval = new Integer(((short[])rawval)[0]);
       } else {
         theirLogger.warn("getPDforDBR: " + pvname + ": Unhandled DBR type: " + dbr.getType());
       }
 
       // Check the alarm status, if information is available
-      if (dbr instanceof STS) {
+      if (dbr.isSTS()) {
         STS thissts = (STS) dbr;
         if (thissts.getSeverity() == Severity.INVALID_ALARM) {
           // Point is undefined, so data value is invalid
           newval = null;
+          //System.out.println(pvname + " INVALID_ALARM, newval set to null");
         } else if (thissts.getSeverity() != Severity.NO_ALARM) {
           // An alarm condition exists
           alarm = true;

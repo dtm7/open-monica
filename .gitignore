@@ -1,14 +1,16 @@
-# Build output and config
-/build/
-/config/
-/open-monica.jar
-/javadoc/
+# Build output
+build
+open-monica.jar
+javadoc
 
 # Eclipse
-/.settings/
-/.classpath
-/.project
+.settings
+.classpath
+.project
 
 # Intellij Idea
-/.idea/
-/*.iml
+.idea
+*.iml
+
+# Other
+out

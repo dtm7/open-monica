@@ -87,7 +87,7 @@ public class ArchivePolicyChange extends ArchivePolicy
           savenow = true;
         }
       } else if (itsPercentage) {
-        float percent = delta / Math.abs(((Number) (itsLastSaveData)).floatValue());
+        float percent = (delta * 100) / Math.abs(((Number) (itsLastSaveData)).floatValue());
         if (percent >= itsChangeThreshold) {
           itsLastSaveData = newData;
           savenow = true;

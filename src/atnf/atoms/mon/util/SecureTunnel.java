@@ -32,11 +32,11 @@ public class SecureTunnel{
       UserInfo ui=new MyUserInfo();
       session.setUserInfo(ui);
 
-      session.connect();
+      session.setConfig("cipher.c2s", "aes128-ctr,aes192-ctr,aes256-ctr,aes128-gcm@openssh.com,aes256-gcm@openssh.com");
+      session.setConfig("CheckCiphers", "aes192-ctr");
 
-      //Channel channel=session.openChannel("shell");
-      //channel.connect();
-      
+      session.connect();
+ 
       if (internaladdress != null) {
         int assigned_port=session.setPortForwardingL(lport, internaladdress, rport);
         System.out.println("localhost:"+assigned_port+" -> "+internaladdress+":"+rport);
@@ -48,6 +48,7 @@ public class SecureTunnel{
     }
     catch(Exception e){
       System.out.println(e);
+      e.printStackTrace();
     }
   }
 

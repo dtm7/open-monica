@@ -70,6 +70,7 @@ public class TranslationBytesToString extends Translation {
               strval += (char) thisbyte;
             }
           }
+          break;
         case 1:  // Contents of each array element are read left to right
           for (int j = 56; j >= 0; j -= 8) {
             // Convert this byte into a string character
@@ -78,7 +79,9 @@ public class TranslationBytesToString extends Translation {
               strval += (char) thisbyte;
             }
           }
+          break;
         default:  // invalid order value
+          break;
       }
       
     }
