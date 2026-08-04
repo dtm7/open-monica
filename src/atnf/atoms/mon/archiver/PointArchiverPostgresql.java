@@ -92,7 +92,8 @@ public class PointArchiverPostgresql extends PointArchiver {
     itsURL = "jdbc:postgresql://" + theirServer + ":" + theirPort + "/" + theirDatabase + "?user=" + theirUsername + "&password=" + theirPassword + "?reWriteBatchedInserts=true";
 
     try {
-      // Instantiate a datasource so that we can use it with out postgres writer class
+      // Instantiate a postgres server pool so that we can use it here and also
+      // in the batched writer
 
       itsPgPool = new PGPoolingDataSource();
       itsPgPool.setDataSourceName("MonicaArchiveWriterPool");
@@ -241,6 +242,8 @@ public class PointArchiverPostgresql extends PointArchiver {
       itsLogger.warn("insertData: " + e);
     }
 
+    int count = 0;
+
     synchronized (alldata) {
 
         // Cycle through all the pointdata for this point, queue for writing
@@ -273,11 +276,12 @@ public class PointArchiverPostgresql extends PointArchiver {
             v
           );
 
-          itsLogger.warn("insertData: Queueing point for archival: " + pm.getName() + "." + data.getSource());
           // Queue point for writing by postgres writer thread
           itsWriter.enqueue(p);
+          count++;
         }
 
+        itsLogger.warn("insertData: Queued " + count + " data values for archival from: " + pm.getName());
         // All data queued, clear it
         alldata.clear();
     }

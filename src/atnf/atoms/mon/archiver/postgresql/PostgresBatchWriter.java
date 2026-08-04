@@ -6,10 +6,14 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.*;
+import org.apache.log4j.Logger;
 
 import atnf.atoms.mon.archiver.postgresql.PostgresBatchPoint;
 
 public class PostgresBatchWriter {
+  /** Logger. */
+  protected Logger itsLogger = Logger.getLogger(getClass().getName());
+
   private final ConcurrentLinkedDeque<PostgresBatchPoint> buffer = new ConcurrentLinkedDeque<>();
 
   // Try with modest thread count values to begin with
@@ -48,6 +52,7 @@ public class PostgresBatchWriter {
                    "(ts, bat, point_id, source, val_float, val_bigint, val_int, val_string) " +
                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
 
+      int points = 0;
       // Construct the prepared statement and try and write it
       try (Connection conn = dataSource.getConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
         // Allow the SQL driver to auto batch our inserts
@@ -86,9 +91,11 @@ public class PostgresBatchWriter {
           }
 
           ps.addBatch();
+          points++;
         }
 
         ps.executeBatch();
+        itsLogger.warn("insertData: Comitting " + points + " data points to database");
         conn.commit();
       } catch (SQLException e) {
         // handle retry or log error
