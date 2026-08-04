@@ -1,3 +1,16 @@
+# Build output
+build
+open-monica.jar
+javadoc
+
+# Eclipse
+.settings
+.classpath
+.project
+
+# Intellij Idea
 .idea
-open-monica.iml
+*.iml
+
+# Other
 out
