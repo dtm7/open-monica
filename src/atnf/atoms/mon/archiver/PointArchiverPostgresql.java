@@ -23,10 +23,8 @@ import atnf.atoms.util.*;
 import atnf.atoms.time.*;
 import atnf.atoms.mon.util.MonitorConfig;
 
-import atnf.atoms.mon.archiver.postgresql.PostgresBatchWriter;
-import atnf.atoms.mon.archiver.postgresql.PostgresBatchPoint;
-
 import org.postgresql.ds.PGPoolingDataSource;
+import atnf.atoms.mon.archiver.postgresql.*;
 
 /**
  * Archiver which uses a MySQL database as the back end.
@@ -83,6 +81,10 @@ public class PointArchiverPostgresql extends PointArchiver {
   //protected String itsURL = "jdbc:mysql://localhost:3306/MoniCA?user=monica&tcpRcvBuf=100000&autoReconnect=true";
   private PGPoolingDataSource itsPgPool;
   private PostgresBatchWriter itsWriter;
+
+  // Hold a mapping between point data and the point_id field for quick writes into
+  // the "archive" table
+  private HashMap<PostgresPointDesc, Integer> itsPgPointMap = new HashMap<>();
 
   /** Constructor. */
   public PointArchiverPostgresql() {
@@ -207,48 +209,26 @@ public class PointArchiverPostgresql extends PointArchiver {
     Map.Entry<String, String> result = getDatabaseValueCol(alldata.get(0).getData());
 
     // What happens if either of these come back null?
-    String data_type = result.getKey();
-    String value_column = result.getValue();
-
-    // Insert a new point into the table, and (always) return the results. This will
-    // get nicer in postgres 19 with ON CONFLICT SELECT
-    String cmd = "INSERT INTO points (name, units, type) " +
-                 "VALUES ('" + pm.getName() + "','" + pm.getUnits() + "', '" + data_type + "') " +
-                 "ON CONFLICT (name, units, type) " +
-                 "DO UPDATE SET name = EXCLUDED.name " +
-                 "RETURNING id, name, units, type";
-
-    ResultSet point_insert = null;
+    String data_type = null;
+    String value_column = null;
     Integer point_id = null;
-
-    try {
-      Statement stmt = null;
-      synchronized (itsConnection) {
-        stmt = itsConnection.createStatement();
-        stmt.execute(cmd);
-
-        // Grab the point_id of this point, we will use it when we insert archival data
-        point_insert = stmt.getResultSet();
-
-        // There should always be only one result here.
-        if (point_insert.next()) {
-            point_id = point_insert.getInt("id");
-        }
-
-        stmt.close();
-      }
-    } catch (Exception e) {
-      itsLogger.warn("insertData: " + cmd);
-      itsLogger.warn("insertData: " + e);
-    }
 
     int count = 0;
 
     synchronized (alldata) {
-
         // Cycle through all the pointdata for this point, queue for writing
         for (int i = 0; i < alldata.size(); i++) {
           PointData data = (PointData) alldata.get(i);
+
+          Map.Entry<String, String> r = getDatabaseValueCol(data.getData());
+
+          // What happens if either of these come back null?
+          data_type = r.getKey();
+          value_column = r.getValue();
+
+          // Get (or create) the point_id
+          // TODO: check for null, return early
+          point_id = getPointID(pm.getName(),data_type, pm.getUnits());
 
           // Figure out the data type
           Object v = null;
@@ -439,6 +419,75 @@ public class PointArchiverPostgresql extends PointArchiver {
       itsLogger.warn("getPreceding: " + e);
       return null;
     }
+  }
+
+  // Try and get a pointID out of the in memory map. If it's not in the
+  // in memory map, see if it's in the database. If it's not in the database
+  // yet, add an entry in the "points" table.
+
+  private Integer getPointID(String name, String dataType, String units) {
+    PostgresPointDesc pgpd = new PostgresPointDesc(name, dataType, units);
+    Integer point_id = itsPgPointMap.get(pgpd);
+    String sql = null;
+
+    // If we have a non-null value, then return it and don't do anything else
+    if (point_id != null) return point_id;
+
+    itsLogger.warn(String.format("getPointID: Point ('%s', '%s', '%s') not found in in-memory map, querying database", name, dataType, units));
+
+    // Build and execute the data request
+    synchronized (itsConnection) {
+      sql = "SELECT id FROM points WHERE name = ? AND units = ? AND type = ? " +
+            "ORDER BY id LIMIT 1";
+
+      try (PreparedStatement pstmt = itsConnection.prepareStatement(sql)) {
+        pstmt.setString(1, name);
+        pstmt.setString(2, units);
+        pstmt.setString(3, dataType);
+
+        try (ResultSet rs = pstmt.executeQuery()) {
+          while (rs.next()) {
+            itsPgPointMap.put(pgpd, rs.getInt("id"));
+          }
+        }
+      } catch (Exception e) {
+        itsLogger.warn("getPointID: " + e);
+        return null;
+      }
+    }
+
+    // Try again
+    point_id = itsPgPointMap.get(pgpd);
+    if (point_id != null) return point_id;
+
+    itsLogger.warn(String.format("getPointID: Point ('%s', '%s', '%s') not found in database, inserting", name, dataType, units));
+    // If we are still in this function, insert a new value
+
+    synchronized (itsConnection) {
+      sql = "INSERT INTO points (name, units, type) " +
+            "VALUES (?, ?, ?) " +
+            "RETURNING id";
+
+      try (PreparedStatement pstmt = itsConnection.prepareStatement(sql)) {
+        pstmt.setString(1, name);
+        pstmt.setString(2, units);
+        pstmt.setString(3, dataType);
+
+        try (ResultSet rs = pstmt.executeQuery()) {
+          while (rs.next()) {
+            itsPgPointMap.put(pgpd, rs.getInt("id"));
+          }
+        }
+      } catch (Exception e) {
+        itsLogger.warn("getPointID: " + e);
+        return null;
+      }
+    }
+
+    // This time we return the final value and let the upper level
+    // worry about if it is a null or not
+    point_id = itsPgPointMap.get(pgpd);
+    return point_id;
   }
 
   /**
