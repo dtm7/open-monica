@@ -321,7 +321,7 @@ public class MoniCAMain {
     try {
       for (String a : MonitorConfig.getProperty("Archiver").split(",")) {
         Class archiverClass = Class.forName("atnf.atoms.mon.archiver.PointArchiver" + a);
-        pa = (PointArchiver) (archiverClass.newInstance());
+        PointArchiver pa = (PointArchiver) (archiverClass.newInstance());
         va.add(pa);
       }
       PointArchiver.setPointArchivers(va);
