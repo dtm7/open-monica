@@ -22,7 +22,6 @@ import org.apache.log4j.Logger;
  */
 public abstract class PointArchiver extends Thread {
   /** Archiver used for archiving data to disk, database, etc. */
-  private static PointArchiver theirArchiver;
   private static Vector<PointArchiver> theirArchivers;
 
   /** Logger. */
