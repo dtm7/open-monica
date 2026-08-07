@@ -114,7 +114,6 @@ public class PointDescription implements ActionListener, NamedObject, Comparable
   protected String itsArchiveString = "";
 
   /** The archiver used to store data for this point. */
-  // protected PointArchiver itsArchiver = null;
   protected Vector<PointArchiver> itsArchivers = null;
 
   /** The number of days to keep archived data, or -1 for indefinitely. */
