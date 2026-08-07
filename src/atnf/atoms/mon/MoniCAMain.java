@@ -316,7 +316,7 @@ public class MoniCAMain {
 
     // Create the archiver to store historical data
     theirLogger.debug("Creating PointArchiver");
-    PointArchiver pa = null;
+    
     Vector<PointArchiver> va = new Vector<>();
     try {
       for (String a : MonitorConfig.getProperty("Archiver").split(",")) {
@@ -329,10 +329,14 @@ public class MoniCAMain {
       theirLogger.fatal("While creating PointArchiver:" + e);
       return false;
     }
-    // Start archive thread
-    ((Thread) pa).start();
-    theirLogger.debug("PointArchiver created");
 
+    // Start each point archiver
+    for (PointArchiver pa : PointArchiver.getPointArchivers()) {
+      // Start archive thread
+      ((Thread) pa).start();
+      theirLogger.warn("PointArchiver " + pa.getClass().getName() + " started");      
+    }
+    
     String confdir = MonitorConfig.getProperty("ConfDir");
     if (confdir != null) {
       File confdirf = new File(confdir);
