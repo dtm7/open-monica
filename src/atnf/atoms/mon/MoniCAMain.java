@@ -317,10 +317,12 @@ public class MoniCAMain {
     // Create the archiver to store historical data
     theirLogger.debug("Creating PointArchiver");
     PointArchiver pa = null;
+    Vector<PointArchiver> va = new Vector<>();
     try {
       Class archiverClass = Class.forName("atnf.atoms.mon.archiver.PointArchiver" + MonitorConfig.getProperty("Archiver"));
       pa = (PointArchiver) (archiverClass.newInstance());
-      PointArchiver.setPointArchiver(pa);
+      va.add(pa);
+      PointArchiver.setPointArchivers(va);
     } catch (Exception e) {
       theirLogger.fatal("While creating PointArchiver:" + e);
       return false;
@@ -372,7 +374,9 @@ public class MoniCAMain {
     Runtime.getRuntime().addShutdownHook(new Thread() {
       public void run() {
         ExternalSystem.stopAll();
-        PointArchiver.getPointArchiver().flushArchive();
+        for (PointArchiver p : PointArchiver.getPointArchivers()) {
+          p.flushArchive();
+        }
       }
     });
 

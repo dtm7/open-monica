@@ -23,6 +23,7 @@ import org.apache.log4j.Logger;
 public abstract class PointArchiver extends Thread {
   /** Archiver used for archiving data to disk, database, etc. */
   private static PointArchiver theirArchiver;
+  private static Vector<PointArchiver> theirArchivers;
 
   /** Logger. */
   protected Logger itsLogger = Logger.getLogger(getClass().getName());
@@ -70,12 +71,18 @@ public abstract class PointArchiver extends Thread {
   }
 
   /** Specify the archiver to be used for archiving all data. */
-  public static synchronized void setPointArchiver(PointArchiver archiver) {
-    theirArchiver = archiver;
+  public static synchronized void setPointArchivers(Vector<PointArchiver> archivers) {
+    theirArchivers = archivers;
   }
 
-  public static synchronized PointArchiver getPointArchiver() {
-    return theirArchiver;
+  // For now this is a bit of a compatibility method, eventually I'd like to make
+  // everything that interacts with the archivers multi archiver aware
+  public static synchronized Vector<PointArchiver> getPointArchivers() {
+    return theirArchivers;
+  }
+
+  public static synchronized PointArchiver getFirstPointArchiver() {
+    return theirArchivers.firstElement();
   }
 
   /** Get the maximum number of records that should be returned to a single archive query. */
@@ -156,7 +163,7 @@ public abstract class PointArchiver extends Thread {
                 // Was no data on disk
                 res = new Vector<PointData>(buffer.size());
               }
-              if (res.size() < PointArchiver.getPointArchiver().getMaxNumRecords()) {
+              if (res.size() < PointArchiver.getFirstPointArchiver().getMaxNumRecords()) {
                 // Disk query wasn't clipped at the memory limit, therefore append buffer data
                 for (int i = 0; i < buffer.size() && buffer.get(i).getTimestamp().isBeforeOrEquals(end); i++) {
                   res.add(buffer.get(i));
@@ -503,7 +510,7 @@ public abstract class PointArchiver extends Thread {
         String[] allnames = PointDescription.getAllUniqueNames();
         for (int i = 0; i < allnames.length; i++) {
           PointDescription point = PointDescription.getPoint(allnames[i]);
-          if (point != null && point.getArchiver() == itsOwner && point.getArchiveLongevity() > 0) {
+          if (point != null && point.getFirstArchiver() == itsOwner && point.getArchiveLongevity() > 0) {
             itsLogger.trace("Purging old archive data for " + point.getFullName());
             itsOwner.purgeOldData(point);
           }
