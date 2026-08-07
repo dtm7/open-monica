@@ -319,9 +319,11 @@ public class MoniCAMain {
     PointArchiver pa = null;
     Vector<PointArchiver> va = new Vector<>();
     try {
-      Class archiverClass = Class.forName("atnf.atoms.mon.archiver.PointArchiver" + MonitorConfig.getProperty("Archiver"));
-      pa = (PointArchiver) (archiverClass.newInstance());
-      va.add(pa);
+      for (String a : MonitorConfig.getProperty("Archiver").split(",")) {
+        Class archiverClass = Class.forName("atnf.atoms.mon.archiver.PointArchiver" + a);
+        pa = (PointArchiver) (archiverClass.newInstance());
+        va.add(pa);
+      }
       PointArchiver.setPointArchivers(va);
     } catch (Exception e) {
       theirLogger.fatal("While creating PointArchiver:" + e);
