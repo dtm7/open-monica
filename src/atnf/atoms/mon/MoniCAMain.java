@@ -8,6 +8,7 @@
 package atnf.atoms.mon;
 
 import org.apache.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
 
 import java.util.*;
 import java.io.*;
@@ -314,19 +315,27 @@ public class MoniCAMain {
 
     // Create the archiver to store historical data
     theirLogger.debug("Creating PointArchiver");
-    PointArchiver pa = null;
+    
+    Vector<PointArchiver> va = new Vector<>();
     try {
-      Class archiverClass = Class.forName("atnf.atoms.mon.archiver.PointArchiver" + MonitorConfig.getProperty("Archiver"));
-      pa = (PointArchiver) (archiverClass.newInstance());
-      PointArchiver.setPointArchiver(pa);
+      for (String a : MonitorConfig.getProperty("Archiver").split(",")) {
+        Class archiverClass = Class.forName("atnf.atoms.mon.archiver.PointArchiver" + a);
+        PointArchiver pa = (PointArchiver) (archiverClass.newInstance());
+        va.add(pa);
+      }
+      PointArchiver.setPointArchivers(va);
     } catch (Exception e) {
       theirLogger.fatal("While creating PointArchiver:" + e);
       return false;
     }
-    // Start archive thread
-    ((Thread) pa).start();
-    theirLogger.debug("PointArchiver created");
 
+    // Start each point archiver
+    for (PointArchiver pa : PointArchiver.getPointArchivers()) {
+      // Start archive thread
+      ((Thread) pa).start();
+      theirLogger.warn("PointArchiver " + pa.getClass().getName() + " started");      
+    }
+    
     String confdir = MonitorConfig.getProperty("ConfDir");
     if (confdir != null) {
       File confdirf = new File(confdir);
@@ -369,8 +378,14 @@ public class MoniCAMain {
     // Add shutdown listener to flush archive
     Runtime.getRuntime().addShutdownHook(new Thread() {
       public void run() {
-        ExternalSystem.stopAll();
-        PointArchiver.getPointArchiver().flushArchive();
+        try {
+          ExternalSystem.stopAll();
+          for (PointArchiver p : PointArchiver.getPointArchivers()) {
+            p.flushArchive();
+          }
+        } finally {
+          LogManager.shutdown();
+        }
       }
     });
 
