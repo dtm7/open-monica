@@ -113,8 +113,8 @@ public class PointDescription implements ActionListener, NamedObject, Comparable
   /** String representation of the archive policies. */
   protected String itsArchiveString = "";
 
-  /** The archiver used to store data for this point. */
-  protected PointArchiver itsArchiver = null;
+  /** The archivers used to store data for this point. Never null. */
+  protected List<PointArchiver> itsArchivers = Collections.emptyList();
 
   /** The number of days to keep archived data, or -1 for indefinitely. */
   protected int itsArchiveLongevity = -1;
@@ -731,7 +731,7 @@ public class PointDescription implements ActionListener, NamedObject, Comparable
     }
 
     // Assign archiver for this point
-    setArchiver(PointArchiver.getPointArchiver());
+    setArchivers(PointArchiver.getPointArchivers());
   }
 
   /**
@@ -959,10 +959,12 @@ public class PointDescription implements ActionListener, NamedObject, Comparable
       }
 
       // Archive data
-      if (itsArchiver != null && itsEnabled) {
+      if (!itsArchivers.isEmpty() && itsEnabled) {
         for (int i = 0; i < itsArchive.length; i++) {
           if (itsArchive[i] != null && itsArchive[i].checkArchiveThis(data)) {
-            itsArchiver.archiveData(this, data);
+            for (PointArchiver p : itsArchivers) {
+              p.archiveData(this, data);
+            }
             break;
           }
         }
@@ -988,20 +990,29 @@ public class PointDescription implements ActionListener, NamedObject, Comparable
   }
 
   /**
-   * Specify the PointArchiver to archive data for this point.
-   * 
-   * @param archiver
-   *          The PointArchiver to be used.
+   * Specify the PointArchivers to archive data for this point.
+   *
+   * @param archivers
+   *          The PointArchivers to be used, or null for none.
    */
-  public void setArchiver(PointArchiver archiver) {
-    itsArchiver = archiver;
+  public void setArchivers(List<PointArchiver> archivers) {
+    if (archivers == null) {
+      itsArchivers = Collections.emptyList();
+    } else {
+      itsArchivers = archivers;
+    }
   }
 
   /**
-   * Return the PointArchiver which archives data for this point.
+   * Return the PointArchivers which archive data for this point. Never null.
    */
-  public PointArchiver getArchiver() {
-    return itsArchiver;
+  public List<PointArchiver> getArchivers() {
+    return itsArchivers;
+  }
+
+  // Compatibility method returning the first archiver only, or null if there are none
+  public PointArchiver getFirstArchiver() {
+    return itsArchivers.isEmpty() ? null : itsArchivers.get(0);
   }
 
   /**

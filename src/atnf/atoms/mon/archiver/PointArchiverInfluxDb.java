@@ -94,6 +94,13 @@ public class PointArchiverInfluxDb extends PointArchiver {
     private static Boolean theirChainToASCII = false;
 
     /**
+     * Indicates whether InfluxDB archivers will chain their own ASCII archiver.
+     */
+    public static boolean chainsToASCII() {
+        return theirChainToASCII;
+    }
+
+    /**
      * Tag Extractor for generating Influxdb Tags
      */
     private Map<String, TagExtractor> itsTags = null;
@@ -295,6 +302,13 @@ public class PointArchiverInfluxDb extends PointArchiver {
         String version = result.getVersion();
         System.out.println("Version: " + version + " | Response: " + result + "ms");
         System.out.println(itsInfluxDB.describeDatabases());
+    }
+
+    /**
+     * Queries are only supported via the chained ASCII archiver.
+     */
+    public boolean supportsQueries() {
+        return itsChainedArchiver != null;
     }
 
     /**

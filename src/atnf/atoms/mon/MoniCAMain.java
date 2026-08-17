@@ -8,6 +8,7 @@
 package atnf.atoms.mon;
 
 import org.apache.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
 
 import java.util.*;
 import java.io.*;
@@ -314,19 +315,75 @@ public class MoniCAMain {
 
     // Create the archiver to store historical data
     theirLogger.debug("Creating PointArchiver");
-    PointArchiver pa = null;
+    
+    String archiverprop = MonitorConfig.getProperty("Archiver");
+    if (archiverprop == null || archiverprop.trim().isEmpty()) {
+      theirLogger.fatal("No Archiver specified in configuration");
+      return false;
+    }
+
+    // Check the requested archivers won't result in duplicate archivers writing the same data
+    String[] archivers = archiverprop.split(",");
+    HashSet<String> archiverset = new HashSet<String>();
+    for (int i = 0; i < archivers.length; i++) {
+      archivers[i] = archivers[i].trim();
+      if (archivers[i].isEmpty()) {
+        theirLogger.fatal("Empty entry in Archiver list \"" + archiverprop + "\"");
+        return false;
+      }
+      if (!archiverset.add(archivers[i])) {
+        theirLogger.fatal("Archiver " + archivers[i] + " is specified more than once");
+        return false;
+      }
+    }
+    if (archiverset.contains("InfluxDb") && archiverset.contains("ASCII") && PointArchiverInfluxDb.chainsToASCII()) {
+      theirLogger.fatal("Archivers InfluxDb and ASCII can't both be used when InfluxChainToASCII is true, remove one or disable chaining");
+      return false;
+    }
+
+    // Resolve all archiver classes before creating any, since archiver constructors start
+    // threads which would otherwise keep the JVM alive if a later archiver name is invalid
+    Vector<Class> archiverclasses = new Vector<Class>();
+    for (String a : archivers) {
+      Class archiverClass;
+      try {
+        archiverClass = Class.forName("atnf.atoms.mon.archiver.PointArchiver" + a, false, MoniCAMain.class.getClassLoader());
+      } catch (ClassNotFoundException e) {
+        theirLogger.fatal("Unknown Archiver type \"" + a + "\"");
+        return false;
+      }
+      if (!PointArchiver.class.isAssignableFrom(archiverClass)) {
+        theirLogger.fatal("Unknown Archiver type \"" + a + "\"");
+        return false;
+      }
+      archiverclasses.add(archiverClass);
+    }
+
+    Vector<PointArchiver> va = new Vector<PointArchiver>();
     try {
-      Class archiverClass = Class.forName("atnf.atoms.mon.archiver.PointArchiver" + MonitorConfig.getProperty("Archiver"));
-      pa = (PointArchiver) (archiverClass.newInstance());
-      PointArchiver.setPointArchiver(pa);
+      for (Class archiverClass : archiverclasses) {
+        PointArchiver pa = (PointArchiver) (archiverClass.newInstance());
+        va.add(pa);
+      }
+      PointArchiver.setPointArchivers(va);
     } catch (Exception e) {
       theirLogger.fatal("While creating PointArchiver:" + e);
       return false;
     }
-    // Start archive thread
-    ((Thread) pa).start();
-    theirLogger.debug("PointArchiver created");
 
+    // Start each point archiver
+    for (PointArchiver pa : PointArchiver.getPointArchivers()) {
+      // Start archive thread
+      ((Thread) pa).start();
+      theirLogger.warn("PointArchiver " + pa.getClass().getName() + " started");
+    }
+    PointArchiver qa = PointArchiver.getQueryPointArchiver();
+    if (qa.supportsQueries()) {
+      theirLogger.info("Archive queries will be satisfied by " + qa.getClass().getName());
+    } else {
+      theirLogger.warn("No configured archiver supports queries, archive data requests will return nothing");
+    }
+    
     String confdir = MonitorConfig.getProperty("ConfDir");
     if (confdir != null) {
       File confdirf = new File(confdir);
@@ -366,11 +423,53 @@ public class MoniCAMain {
     // Set the encryption keys
     KeyKeeper.getExponent();
 
+    // Max time to wait for the archivers to flush on shutdown
+    long flushtimeout;
+    try {
+      flushtimeout = Long.parseLong(MonitorConfig.getProperty("ArchiveFlushTimeout", "60")) * 1000;
+    } catch (Exception e) {
+      theirLogger.warn("Error parsing ArchiveFlushTimeout configuration parameter: " + e);
+      flushtimeout = 60000;
+    }
+    final long flushtimeoutms = flushtimeout;
+
     // Add shutdown listener to flush archive
     Runtime.getRuntime().addShutdownHook(new Thread() {
       public void run() {
-        ExternalSystem.stopAll();
-        PointArchiver.getPointArchiver().flushArchive();
+        try {
+          ExternalSystem.stopAll();
+          // Flush all archivers in parallel, but don't wait forever for a stuck one
+          long deadline = System.currentTimeMillis() + flushtimeoutms;
+          Vector<Thread> flushers = new Vector<Thread>();
+          for (final PointArchiver p : PointArchiver.getPointArchivers()) {
+            if (!p.isAlive()) {
+              theirLogger.error("PointArchiver " + p.getClass().getName() + " is not running, unflushed data will be lost");
+              continue;
+            }
+            Thread t = new Thread("Flush " + p.getClass().getSimpleName()) {
+              public void run() {
+                p.flushArchive();
+              }
+            };
+            t.setDaemon(true);
+            t.start();
+            flushers.add(t);
+          }
+          for (Thread t : flushers) {
+            long remaining = deadline - System.currentTimeMillis();
+            try {
+              if (remaining > 0) {
+                t.join(remaining);
+              }
+            } catch (InterruptedException e) {
+            }
+            if (t.isAlive()) {
+              theirLogger.error(t.getName() + " did not complete within " + (flushtimeoutms / 1000) + "s, unflushed data may be lost");
+            }
+          }
+        } finally {
+          LogManager.shutdown();
+        }
       }
     });
 
