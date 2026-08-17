@@ -8,7 +8,10 @@
 
 ##############################
 # ARCHIVER OPTIONS:
-# Type of archiver to use
+# Type of archiver to use. Multiple archivers are possible by specifying
+# them as a comma-separated list. Only one of each type is supported. The 
+# first archiver specified is always used to satisfy data queries.
+#Archiver InfluxDb,ASCII
 Archiver ASCII
 # Max archive records to be returned for a single query
 # This is to prevent server CPU/memory saturation
