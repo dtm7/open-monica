@@ -14,7 +14,7 @@ Archiver ASCII
 # This is to prevent server CPU/memory saturation
 ArchiveMaxRecords 8192
 
-# Options specific to the ASCII archiver:
+### ASCII archiver options ###
 # Where to save archived data
 ArchiveDir /tmp/monica-archive
 # Temporary directory - need to be able to read/write here
@@ -25,6 +25,30 @@ ArchiveMaxSize 1048576
 ArchiveMaxAge 604800
 # Number of threads to write data to disk
 ArchiveNumThreads 1
+
+### Influx archiver options ###
+#InfluxDB monica
+#InfluxRetentionPolicy default
+#InfluxURL https://localhost:8086
+#InfluxUsername admin
+#InfluxPassword password
+# File that maps monica points to influx measurements/fields/tags
+#InfluxTagMap /etc/askap/site/monica/influx.mapping
+# Maximum batch size to write to influxdb
+#InfluxBatchSize 1000
+# Maximum age of batch (in seconds) before flushing
+#InfluxBatchAge 1
+# Optionally use the ASCII archiver as a secondary
+#InfluxChainToASCII false
+
+## Postgres archiver options ##
+#PsqlServer localhost
+#PsqlPort 5432
+#PsqlDatabase monica
+#PsqlUsername monica
+#PsqlPassword password
+#PgsqlMaxBatchSize 500
+#PgsqlMaxBatchAge 10
 
 # Max number of records to accumulate before flushing to disk
 MaxFlushSize 50
