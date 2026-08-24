@@ -82,6 +82,8 @@ public class PointArchiverPostgresql extends PointArchiver {
    */
   private static int theirMaxBatchAge = 10000;
 
+  private static boolean theirPurgeEnabled = true;
+
   private String itsURL = null;
   /** The URL to connect to the server/database. */
   //protected String itsURL = "jdbc:mysql://localhost:3306/MoniCA?user=monica&tcpRcvBuf=100000&autoReconnect=true";
@@ -104,6 +106,12 @@ public class PointArchiverPostgresql extends PointArchiver {
       theirMaxBatchAge = 1000 * Integer.parseInt(MonitorConfig.getProperty("PsqlMaxBatchAge", "10"));
     } catch (Exception e) {
       Logger.getLogger(PointArchiver.class.getName()).warn("Error parsing PsqlMaxBatchTime configuration parameter: " + e);
+    }
+
+    try {
+      theirPurgeEnabled = Boolean.parseBoolean(MonitorConfig.getProperty("PsqlPurgeEnabled", "true"));
+    } catch (Exception e) {
+      Logger.getLogger(PointArchiver.class.getName()).warn("Error parsing PsqlPurgeEnabled configuration parameter: " + e);
     }
   }
 
@@ -146,6 +154,10 @@ public class PointArchiverPostgresql extends PointArchiver {
    */
   protected void purgeOldData(PointDescription point) {
     if (point.getArchiveLongevity() < 0)
+      return;
+
+    // Return early if archive purging is not enabled
+    if (!theirPurgeEnabled)
       return;
 
     AbsTime purgeBefore = AbsTime.factory((new AbsTime()).getValue() - 86400000000l * point.getArchiveLongevity());
