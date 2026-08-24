@@ -509,9 +509,14 @@ public abstract class PointArchiver extends Thread {
         String[] allnames = PointDescription.getAllUniqueNames();
         for (int i = 0; i < allnames.length; i++) {
           PointDescription point = PointDescription.getPoint(allnames[i]);
-          if (point != null && point.getFirstArchiver() == itsOwner && point.getArchiveLongevity() > 0) {
-            itsLogger.trace("Purging old archive data for " + point.getFullName());
-            itsOwner.purgeOldData(point);
+          if (point != null && point.getArchiveLongevity() > 0) {
+            for (PointArchiver a : point.getArchivers()) {
+              // Only purge an archiver if that archiver is our parent object
+              if (a == itsOwner ) {
+                itsLogger.trace("Purging old archive data for " + point.getFullName());
+                itsOwner.purgeOldData(point);
+              }
+            }  
           }
           try {
             // Short sleep so as not to hog resources
