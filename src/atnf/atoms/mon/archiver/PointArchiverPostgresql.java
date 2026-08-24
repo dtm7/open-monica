@@ -148,9 +148,7 @@ public class PointArchiverPostgresql extends PointArchiver {
     if (point.getArchiveLongevity() < 0)
       return;
 
-    // Calculate timestamps for period to purge over
-    AbsTime start = AbsTime.factory(0);
-    AbsTime end = AbsTime.factory((new AbsTime()).getValue() - 86400000000l * point.getArchiveLongevity());
+    AbsTime purgeBefore = AbsTime.factory((new AbsTime()).getValue() - 86400000000l * point.getArchiveLongevity());
       
     // We can't fully describe one of our "points" from the PointDescription class,
     // this means this function will be a somewhat blunt instrument. It will (by necessity)
@@ -159,18 +157,17 @@ public class PointArchiverPostgresql extends PointArchiver {
     String sql = "DELETE FROM archive USING points " +
                  "WHERE " +
                  "(archive.point_id = points.id) AND " +
-                 "(name = ? AND units = ? AND source = ? AND ts >= ? AND ts <= ?)";
+                 "(name = ? AND units = ? AND source = ? AND ts <= ?)";
 
     try (Connection conn = itsPgPool.getConnection(); PreparedStatement pstmt = conn.prepareStatement(sql)) {
       pstmt.setString(1, point.getName());
       pstmt.setString(2, point.getUnits());
       pstmt.setString(3, point.getSource());
-      pstmt.setObject(4, start.getAsDate().toInstant().atOffset(ZoneOffset.UTC));
-      pstmt.setObject(5, end.getAsDate().toInstant().atOffset(ZoneOffset.UTC));
+      pstmt.setObject(4, purgeBefore.getAsDate().toInstant().atOffset(ZoneOffset.UTC));
 
       int rows = pstmt.executeUpdate();
       itsLogger.debug("purgeOldData: Successfully purged " + rows + " of data from: " + point.getName());
-    } catch (SQLException e) {
+    } catch (Exception e) {
       itsLogger.error("purgeOldData: Error purging data from database: " + e.getMessage());
     }
     
