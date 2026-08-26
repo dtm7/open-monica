@@ -34,22 +34,55 @@ class ArchiveReplicator
   
   /** Connection to the server. */
   private static MoniCAClient itsServer = null;
+
+  // Command line flag values
+  private static String server = null;
+  private static String archiver = null;
+  private static boolean backfill = false;
   
   public static final void main(String[] args) {
-    //CHECK USER ARGUMENTS
-    if (args.length<2) {
-      System.err.println("USAGE: ArchiveReplicator remote_server archive_type [point1] [pointN]");
-      System.err.println("       Copies a remote monitor point archive to a local archive.");
-      System.err.println("       If no points are specified then all points are copied.");
-      System.err.println("       eg.. ArchiveReplicator myserver MySQL");
-      System.err.println("       ..would copy the data from host 'myserver' to a local MySQL archive.");
+    List<String> argsList = new ArrayList<>(Arrays.asList(args));
+    List<String> flagsList = new ArrayList<>();
+
+    // Parse command line arguments
+    for (int i = 0; i < args.length; i++) {
+      if ("--server".equals(args[i]) && args.length > i + 1) {
+        server = args[i + 1];
+        flagsList.add(args[i]);
+        flagsList.add(args[++i]);
+      } else if ("--archiver".equals(args[i]) && args.length > i + 1) {
+        archiver = args[i + 1];
+        flagsList.add(args[i]);
+        flagsList.add(args[++i]);
+      } else if ("--backfill".equals(args[i])) {
+        backfill = true;
+        flagsList.add(args[i]);
+      }
+    }
+
+    System.out.println("server: " + server + " | archiver: " + archiver + " | backfill: " + backfill);
+
+    argsList.removeAll(flagsList);
+
+    if (server == null || archiver == null) {
+      System.err.println("USAGE: ArchiveReplicator [OPTIONS]... [point1] [pointN]");
+      System.err.println("Copies a remote monitor point archive to a local archive.");
+      System.err.println("If no points are specified then all points are copied.");
+      System.err.println("");
+      System.err.println("Arguments:");
+      System.err.println("  --server    HOSTNAME    hostname of server to transfer data from");
+      System.err.println("  --archiver  ARCHIVER    archiver type to transfer data to");
+      System.err.println("  --backfill              backfill new archive from server data");
+      System.err.println("");
+      System.err.println("eg.. ArchiveReplicator --server myserver --archiver MySQL --backfill");
+      System.err.println("...would copy any older data from host 'myserver' to a local MySQL archive.");
       System.exit(1);
     }
     
     //CONNECT TO SERVER
-    System.out.println("#Connecting to \"" + args[0] + "\"");
+    System.out.println("#Connecting to \"" + server + "\"");
     try {
-      itsServer = new MoniCAClientIce(args[0]);
+      itsServer = new MoniCAClientIce(server);
     } catch (Exception e) {
       System.err.println(e.getMessage());
       e.printStackTrace();
@@ -57,13 +90,13 @@ class ArchiveReplicator
     }
     
     //CREATE NEW ARCHIVER
-    System.out.println("#Instanciating new PointArchiver" + args[1]);
+    System.out.println("#Instanciating new PointArchiver" + archiver);
     try {
-      Class archiverClass = Class.forName("atnf.atoms.mon.archiver.PointArchiver"+args[1]);
+      Class archiverClass = Class.forName("atnf.atoms.mon.archiver.PointArchiver" + archiver);
       itsNewArchive = (PointArchiver)(archiverClass.newInstance());
       itsNewArchive.start();
     } catch (Exception e) {
-      System.err.println("ERROR: Could not instanciate local 'PointArchiver" + args[1] + "'");
+      System.err.println("ERROR: Could not instantiate local 'PointArchiver" + archiver + "'");
       System.exit(1);
     }
 
@@ -76,23 +109,23 @@ class ArchiveReplicator
       System.exit(1);
     }
     Vector<String> pointnames = null;
-    if (args.length>2) {
+    if (argsList.size() > 0) {
       //USER SPECIFIED SUBSET OF POINTS
-      pointnames=new Vector<String>(args.length-2);
-      for (int i=2; i<args.length; i++) {
+      pointnames=new Vector<String>(argsList.size());
+      for (int i = 0; i < argsList.size(); i++) {
         //Ensure the user-specified points exist on the server
         boolean found=false;
 	for (String point: serverpoints) {
 	    //        for (int j=0; j<serverpoints.length; j++) {
 	    //          if (serverpoints[j].equals(args[i])) {
-	    if (point.equals(args[i])) {
+	    if (point.equals(argsList.get(i))) {
             found=true;
-            pointnames.add(args[i]);
+            pointnames.add(argsList.get(i));
             break;
           }
         }
         if (!found) {
-          System.err.println("#ERROR: Point \"" + args[i] + "\" does not exist");
+          System.err.println("#ERROR: Point \"" + argsList.get(i) + "\" does not exist");
           System.exit(1);
         }
       }
@@ -117,7 +150,6 @@ class ArchiveReplicator
     
     //PROCESS EACH POINT IN TURN
     long totalrecords=0;
-    AbsTime downloadend=new AbsTime();
     for (int pointnum=0; pointnum<points.size(); pointnum++) {
       PointDescription thispoint=(PointDescription)points.get(pointnum);
       String thisname=(String)pointnames.get(pointnum);
@@ -128,20 +160,52 @@ class ArchiveReplicator
         continue;
       }
       System.err.println("#Replicating \"" + thisname + "\"");
-      //DETERMINE HOW FAR BACK TO COLLECT DATA FROM REMOTE SERVER
-      AbsTime downloadstart=null;
-      PointData ourlast=itsNewArchive.getPreceding(thispoint, downloadend);
-      if (ourlast==null) {
-        downloadstart=AbsTime.factory(0l);
+      
+      // Determine which data to replicate to the new archiver
+      AbsTime downloadstart = null;
+      AbsTime downloadend = null;
+
+      // We have two main operation modes, backfill fills in everything before
+      // the earliest data available in the archive, while the default grabs
+      // all the data newer than what is available in the archive.
+      
+      if (backfill) {
+        // Find the earliest data that already exists in the archive
+        downloadstart = AbsTime.factory(1l);
+        PointData ourfirst=itsNewArchive.getFollowing(thispoint, downloadstart);
+
+        if (ourfirst == null) {
+          // Get everything if there is no data in the archive
+          downloadend=AbsTime.factory(0l);
+        } else {
+          // Finish data download just before earliest data point in new archive
+          System.out.println(ourfirst.toString());
+          downloadend=ourfirst.getTimestamp().add(RelTime.factory(-1l));
+        }
       } else {
-        downloadstart=ourlast.getTimestamp().add(RelTime.factory(1l));
+        // Find the latest data that already exists in the archive
+        downloadend = new AbsTime();
+        PointData ourlast=itsNewArchive.getPreceding(thispoint, downloadend);
+
+        // Get everything if there is no data in the archive
+        if (ourlast==null) {
+          downloadstart=AbsTime.factory(1l);
+        } else {
+          // Start data download just after latest data point in new archive
+          System.out.println(ourlast.toString());
+          downloadstart=ourlast.getTimestamp().add(RelTime.factory(1l));
+        }
       }
+
+      System.out.println("Starting: " + downloadstart.toString());
+      System.out.println("Ending: " + downloadend.toString());
+
       long numcollected=0;
       while (true) {
         //COLLECT SOME MORE DATA FROM THE SERVER
         Vector<PointData> newdata=null;
         try {
-          itsServer.getArchiveData(thisname, downloadstart, downloadend);
+          newdata = itsServer.getArchiveData(thisname, downloadstart, downloadend);
         } catch (Exception e) {
           System.err.println("ERROR: Could not communicate with server: " + e.getMessage());
           System.exit(1);
@@ -163,7 +227,7 @@ class ArchiveReplicator
           try {
             sleeptime.sleep();
           } catch (Exception e) { }
-          //System.out.println("#Waiting for local archive to finish flushing..");
+          System.out.println("#Waiting for local archive to finish flushing..");
         }
 //        if (numcollected>700000 || totalrecords>1000000) {
 //          System.exit(0);
