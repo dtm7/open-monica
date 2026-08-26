@@ -176,10 +176,9 @@ class ArchiveReplicator
 
         if (ourfirst == null) {
           // Get everything if there is no data in the archive
-          downloadend=AbsTime.factory(0l);
+          downloadend = new AbsTime();
         } else {
           // Finish data download just before earliest data point in new archive
-          System.out.println(ourfirst.toString());
           downloadend=ourfirst.getTimestamp().add(RelTime.factory(-1l));
         }
       } else {
@@ -192,13 +191,9 @@ class ArchiveReplicator
           downloadstart=AbsTime.factory(1l);
         } else {
           // Start data download just after latest data point in new archive
-          System.out.println(ourlast.toString());
           downloadstart=ourlast.getTimestamp().add(RelTime.factory(1l));
         }
       }
-
-      System.out.println("Starting: " + downloadstart.toString());
-      System.out.println("Ending: " + downloadend.toString());
 
       long numcollected=0;
       while (true) {
