@@ -442,7 +442,7 @@ public abstract class PointArchiver extends Thread {
         if (pm == null) {
           continue;
         }
-        if (itsBuffer.get(pm) != null) {
+        if (itsBuffer.get(pm) != null && !itsBuffer.get(pm).isEmpty()) {
           res = true;
           break;
         }
