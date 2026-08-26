@@ -386,7 +386,7 @@ public class PointArchiverPostgresql extends PointArchiver {
 
     String sql = "SELECT * FROM points INNER JOIN archive ON points.id = archive.point_id " +
                  "WHERE name = ? AND source = ? AND ts <= ? " +
-                 "ORDER BY ts " +
+                 "ORDER BY ts DESC " +
                  "LIMIT 1";
 
     try (Connection conn = itsPgPool.getConnection(); PreparedStatement pstmt = conn.prepareStatement(sql)) {
