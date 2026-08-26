@@ -235,14 +235,8 @@ class ArchiveReplicator
     }
     
     //DONT EXIT UNTIL LOCAL ARCHIVE HAS FINISHED FLUSHING
-    while (itsNewArchive.checkBuffer()) {
-      RelTime sleeptime=RelTime.factory(1000000l);
-      try {
-        sleeptime.sleep();
-      } catch (Exception e) { }
-      System.out.println("#Waiting for local archive to finish flushing..");
-    }
-    
+    itsNewArchive.flushArchive();
+
     System.out.println("#Replicated " + totalrecords + " records total. Cya!");
     System.exit(0);
   }
