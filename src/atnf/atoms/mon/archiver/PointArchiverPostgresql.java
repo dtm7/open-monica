@@ -82,6 +82,13 @@ public class PointArchiverPostgresql extends PointArchiver {
    */
   private static int theirMaxBatchAge = 10000;
 
+  /**
+   * Postgres specific "MAXNUMRECORDS" config option. Databases are much more efficient
+   * at returning large datasets, and with an eye to configuring multiple archivers we
+   * wouldn't want to have to set this too high while still using an ASCII archiver
+   */
+  private static int theirMaxNumRecords = 250000;
+
   private static boolean theirPurgeEnabled = true;
 
   private String itsURL = null;
@@ -112,6 +119,12 @@ public class PointArchiverPostgresql extends PointArchiver {
       theirPurgeEnabled = Boolean.parseBoolean(MonitorConfig.getProperty("PsqlPurgeEnabled", "true"));
     } catch (Exception e) {
       Logger.getLogger(PointArchiver.class.getName()).warn("Error parsing PsqlPurgeEnabled configuration parameter: " + e);
+    }
+
+    try {
+      theirMaxNumRecords = Integer.parseInt(MonitorConfig.getProperty("PsqlMaxNumRecords", "250000"));
+    } catch (Exception e) {
+      Logger.getLogger(PointArchiver.class.getName()).warn("Error parsing PsqlMaxNumRecords configuration parameter: " + e);
     }
   }
 
@@ -184,6 +197,13 @@ public class PointArchiverPostgresql extends PointArchiver {
     }
     
     return;
+  }
+
+  /** 
+   * Override from PointArchiver abstract class because we use a separate value 
+  **/
+  public int getMaxNumRecords() {
+    return theirMaxNumRecords;
   }
 
  /**
@@ -332,6 +352,7 @@ public class PointArchiverPostgresql extends PointArchiver {
    */
   protected Vector<PointData> extractDeep(PointDescription pm, AbsTime start, AbsTime end) {
     // Build and execute the data request
+    // Note: default query ordering if not specified is ASC
     String sql = "SELECT * FROM points INNER JOIN archive ON points.id = archive.point_id " +
                  "WHERE name = ? AND source = ? AND (ts >= ? AND ts <= ?) " +
                  "ORDER BY ts " +
@@ -349,7 +370,7 @@ public class PointArchiverPostgresql extends PointArchiver {
       pstmt.setString(2, pm.getSource());
       pstmt.setObject(3, start.getAsDate().toInstant().atOffset(ZoneOffset.UTC));
       pstmt.setObject(4, end.getAsDate().toInstant().atOffset(ZoneOffset.UTC));
-      pstmt.setInt(5, MAXNUMRECORDS);
+      pstmt.setInt(5, theirMaxNumRecords);
 
       itsLogger.debug("extractDeep: " + pstmt.toString());
 
