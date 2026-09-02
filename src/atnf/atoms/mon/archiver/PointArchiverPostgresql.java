@@ -726,7 +726,7 @@ public class PointArchiverPostgresql extends PointArchiver {
     } else if (data instanceof EnumItem) {
       column = "val_string";
       type = "enum";
-      value = ((String) data).toString();
+      value = ((EnumItem) data).toString();
     } else if (data instanceof Float) {
       column = "val_float";
       type = "flt";
@@ -746,11 +746,11 @@ public class PointArchiverPostgresql extends PointArchiver {
     } else if (data instanceof RelTime){
       column = "val_bigint";
       type = "relt";
-      value = ((Long) data).longValue();
+      value = ((RelTime) data).getValue();
     } else if (data instanceof Short) {
       column = "val_int";
       type = "short";
-      value = ((Integer) data).intValue();
+      value = ((Short) data).intValue();
     } else if (data instanceof Boolean) {
       column = "val_bool";
       type = "bool";
