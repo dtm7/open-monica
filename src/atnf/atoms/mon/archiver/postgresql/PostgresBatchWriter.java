@@ -23,11 +23,13 @@ public class PostgresBatchWriter {
   private final javax.sql.DataSource dataSource;
   private final int maxBatchAge;
   private final int maxBatchSize;
+  private final int maxQueueSize;
 
-  public PostgresBatchWriter(javax.sql.DataSource dataSource, int maxBatchAge, int maxBatchSize) {
+  public PostgresBatchWriter(javax.sql.DataSource dataSource, int maxBatchAge, int maxBatchSize, int maxQueueSize) {
     this.dataSource = dataSource;
     this.maxBatchAge = maxBatchAge;
-    this.maxBatchSize = maxBatchSize;    
+    this.maxBatchSize = maxBatchSize;
+    this.maxQueueSize = maxQueueSize;
   }
 
   public void start() {
@@ -128,10 +130,18 @@ public class PostgresBatchWriter {
       ps.executeBatch();
       itsLogger.debug("insertData: Comitting " + points + " data points to database");
       conn.commit();
+    } catch (SQLTransientException | SQLRecoverableException e) {
+      itsLogger.error("insertData: Transient/Recoverable SQL exception, re-adding batch to queue: " + e.getMessage());
+
+      // Strictly speaking, the order things get inserted doesn't matter, but add to the start of the queue anyway
+      for (PostgresBatchPoint data : batch) {
+        buffer.addFirst(data);
+      }
+  
+    } catch (SQLNonTransientException e) {
+      itsLogger.error("insertData: Discarding transaction: unhandled Non-Transient SQL exception: " + e.getMessage());
     } catch (SQLException e) {
-      // What do we do if we get an SQL error while committing this set of inserts? Ditch
-      // the whole lot? Retry? We will probably need to try and evaluate the type of error
-      // before we can properly decide.
+      itsLogger.error("insertData: Discarding transaction: unhandled SQL exception: " + e.getMessage());
     }
   }
 

@@ -71,16 +71,23 @@ public class PointArchiverPostgresql extends PointArchiver {
     * Postgres password
     */
   private final static String theirPassword = MonitorConfig.getProperty("PsqlPassword", "admin");
-
+  
   /**
    * Postgres batch size when writing. Potentially parse from config
    */
   private static int theirMaxBatchSize = 500;
 
   /**
-   * Postgres max batch age before writing to db. Potentially parse from config
+   * Postgres max batch age (ms) before writing to db. Potentially parse from config
    */
   private static int theirMaxBatchAge = 10000;
+
+  /**
+   * Postgres maximum queue buffer size. Larger means more memory use but potentially
+   * better ability to tolerate longer database outages. Only really useful in cases
+   * where the database (temporarily) goes away or can't keep up.
+   */
+  private static int theirMaxQueueSize = 1000000;
 
   /**
    * Postgres specific "MAXNUMRECORDS" config option. Databases are much more efficient
@@ -114,6 +121,12 @@ public class PointArchiverPostgresql extends PointArchiver {
     } catch (Exception e) {
       Logger.getLogger(PointArchiver.class.getName()).warn("Error parsing PsqlMaxBatchTime configuration parameter: " + e);
     }
+
+    try {
+      theirMaxQueueSize = Integer.parseInt(MonitorConfig.getProperty("PsqlMaxQueueSize", "1000000"));
+    } catch (Exception e) {
+      Logger.getLogger(PointArchiver.class.getName()).warn("Error parsing PsqlMaxQueueSize configuration parameter: " + e);
+    }    
 
     try {
       theirPurgeEnabled = Boolean.parseBoolean(MonitorConfig.getProperty("PsqlPurgeEnabled", "true"));
@@ -155,7 +168,7 @@ public class PointArchiverPostgresql extends PointArchiver {
     createTables();
 
     // Configure and start the batch writer process
-    itsWriter = new PostgresBatchWriter(itsPgPool, theirMaxBatchAge, theirMaxBatchSize);
+    itsWriter = new PostgresBatchWriter(itsPgPool, theirMaxBatchAge, theirMaxBatchSize, theirMaxQueueSize);
     itsWriter.start();
   }
 
