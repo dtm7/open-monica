@@ -3,6 +3,9 @@ package atnf.atoms.mon.archiver.postgresql;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.sql.SQLNonTransientException;
+import java.sql.SQLTransientException;
+import java.sql.SQLRecoverableException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.*;
@@ -42,10 +45,14 @@ public class PostgresBatchWriter {
   // flush
   
   public void enqueue(PostgresBatchPoint data) {
+    // Buffer too large, remove oldest value (front of queue)
+    if (buffer.size() >= maxQueueSize) buffer.pollFirst();
+
+    // Add the new point to the end of the buffer
     buffer.addLast(data);
-    if (buffer.size() >= maxBatchSize) { // trigger early flush if threshold reached
-      writerPool.submit(this::flushDB);
-    }
+
+    // trigger early flush if threshold reached
+    if (buffer.size() >= maxBatchSize) writerPool.submit(this::flushDB);
   }
 
   // Do an orderly shutdown of the postgres batch writer. First stop any existing
