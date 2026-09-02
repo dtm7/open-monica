@@ -140,9 +140,10 @@ public class PostgresBatchWriter {
     } catch (SQLTransientException | SQLRecoverableException e) {
       itsLogger.error("insertData: Transient/Recoverable SQL exception, re-adding batch to queue: " + e.getMessage());
 
-      // Strictly speaking, the order things get inserted doesn't matter, but add to the start of the queue anyway
-      for (PostgresBatchPoint data : batch) {
-        buffer.addFirst(data);
+      // Strictly speaking, the order things get inserted doesn't matter, but add back to the start of the queue anyway
+      // NB: To maintain order we should add them in *reverse*
+      for (int i = batch.size() - 1; i >= 0; i--) {
+        buffer.addFirst(batch.get(i));
       }
   
     } catch (SQLNonTransientException e) {
