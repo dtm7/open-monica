@@ -607,6 +607,7 @@ public class PointArchiverPostgresql extends PointArchiver {
           break;
         case "relt":
           val = RelTime.factory(rs.getLong("val_bigint"));
+          break;
         case "short":
           val = (short) rs.getInt("val_int");
           break;
