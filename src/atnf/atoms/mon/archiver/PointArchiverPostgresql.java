@@ -662,6 +662,13 @@ public class PointArchiverPostgresql extends PointArchiver {
                     "val_string VARCHAR(255), " +
                     "val_bool BOOLEAN)"
       );
+
+      // Since pretty much every non-insert query we do is based on these
+      // three columns, create an additional index
+      stmt.execute( "CREATE INDEX IF NOT EXISTS idx_archive_point_source_ts ON " +
+                    "archive (point_id, source, ts)"
+      );
+
     } catch (Exception e) {
       itsLogger.error("createTables: " + e);
     }
