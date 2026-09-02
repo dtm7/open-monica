@@ -87,7 +87,7 @@ public class PointArchiverPostgresql extends PointArchiver {
    * better ability to tolerate longer database outages. Only really useful in cases
    * where the database (temporarily) goes away or can't keep up.
    */
-  private static int theirMaxQueueSize = 1000000;
+  private static int theirMaxBufferSize = 1000000;
 
   /**
    * Postgres specific "MAXNUMRECORDS" config option. Databases are much more efficient
@@ -123,9 +123,9 @@ public class PointArchiverPostgresql extends PointArchiver {
     }
 
     try {
-      theirMaxQueueSize = Integer.parseInt(MonitorConfig.getProperty("PsqlMaxQueueSize", "1000000"));
+      theirMaxBufferSize = Integer.parseInt(MonitorConfig.getProperty("PsqlMaxBufferSize", "1000000"));
     } catch (Exception e) {
-      Logger.getLogger(PointArchiver.class.getName()).warn("Error parsing PsqlMaxQueueSize configuration parameter: " + e);
+      Logger.getLogger(PointArchiver.class.getName()).warn("Error parsing PsqlMaxBufferSize configuration parameter: " + e);
     }    
 
     try {
@@ -168,7 +168,7 @@ public class PointArchiverPostgresql extends PointArchiver {
     createTables();
 
     // Configure and start the batch writer process
-    itsWriter = new PostgresBatchWriter(itsPgPool, theirMaxBatchAge, theirMaxBatchSize, theirMaxQueueSize);
+    itsWriter = new PostgresBatchWriter(itsPgPool, theirMaxBatchAge, theirMaxBatchSize, theirMaxBufferSize);
     itsWriter.start();
   }
 

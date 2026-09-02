@@ -26,13 +26,13 @@ public class PostgresBatchWriter {
   private final javax.sql.DataSource dataSource;
   private final int maxBatchAge;
   private final int maxBatchSize;
-  private final int maxQueueSize;
+  private final int maxBufferSize;
 
-  public PostgresBatchWriter(javax.sql.DataSource dataSource, int maxBatchAge, int maxBatchSize, int maxQueueSize) {
+  public PostgresBatchWriter(javax.sql.DataSource dataSource, int maxBatchAge, int maxBatchSize, int maxBufferSize) {
     this.dataSource = dataSource;
     this.maxBatchAge = maxBatchAge;
     this.maxBatchSize = maxBatchSize;
-    this.maxQueueSize = maxQueueSize;
+    this.maxBufferSize = maxBufferSize;
   }
 
   public void start() {
@@ -46,7 +46,7 @@ public class PostgresBatchWriter {
   
   public void enqueue(PostgresBatchPoint data) {
     // Buffer too large, remove oldest value (front of queue)
-    if (buffer.size() >= maxQueueSize) buffer.pollFirst();
+    if (buffer.size() >= maxBufferSize) buffer.pollFirst();
 
     // Add the new point to the end of the buffer
     buffer.addLast(data);
