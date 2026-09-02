@@ -49,6 +49,7 @@ ArchiveNumThreads 1
 #PsqlPassword password
 #PgsqlMaxBatchSize 500
 #PgsqlMaxBatchAge 10
+#PsqlMaxQueueSize 1000000
 #PgsqlPurgeEnabled true
 #PsqlMaxNumRecords 250000
 
