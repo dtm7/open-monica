@@ -98,6 +98,8 @@ public class PointArchiverPostgresql extends PointArchiver {
 
   private static boolean theirPurgeEnabled = true;
 
+  private static boolean theirUseTimescaleDB = false;
+
   private String itsURL = null;
   /** The URL to connect to the server/database. */
   //protected String itsURL = "jdbc:mysql://localhost:3306/MoniCA?user=monica&tcpRcvBuf=100000&autoReconnect=true";
@@ -138,6 +140,12 @@ public class PointArchiverPostgresql extends PointArchiver {
       theirMaxNumRecords = Integer.parseInt(MonitorConfig.getProperty("PsqlMaxNumRecords", "250000"));
     } catch (Exception e) {
       Logger.getLogger(PointArchiver.class.getName()).warn("Error parsing PsqlMaxNumRecords configuration parameter: " + e);
+    }
+
+    try {
+      theirUseTimescaleDB = Boolean.parseBoolean(MonitorConfig.getProperty("PsqlEnableTimescaleDB", "false"));
+    } catch (Exception e) {
+      Logger.getLogger(PointArchiver.class.getName()).warn("Error parsing PsqlTimescaleDB configuration parameter: " + e);
     }
   }
 
@@ -677,12 +685,38 @@ public class PointArchiverPostgresql extends PointArchiver {
                     "val_bool BOOLEAN)"
       );
 
-      // Since pretty much every non-insert query we do is based on these
-      // three columns, create an additional index
-      stmt.execute( "CREATE INDEX IF NOT EXISTS idx_archive_point_source_ts ON " +
-                    "archive (point_id, source, ts)"
-      );
+      // Enable timescaledb. This will also convert a "basic" schema to one using
+      // timescaledb in-place.
+      
+      if (theirUseTimescaleDB) {
+        // Enable timescaledb extension for this database
+        itsLogger.debug("createTables: Enabling timescaledb");
+        stmt.execute("CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE");
+        stmt.execute("CREATE EXTENSION IF NOT EXISTS timescaledb_toolkit CASCADE");
+        
+        // Enable hypertable & compression on archive table
+        itsLogger.debug("createTables: Creating timescaledb hypertable");
+        stmt.execute("SELECT create_hypertable('archive', by_range('ts'), if_not_exists => true)");
+        // NB: We may want to segment by 'source' too - this mirrors what monica does in
+        // the ASCII archiver should make purging data far less expensive
+        stmt.execute("ALTER TABLE archive SET (timescaledb.compress, timescaledb.compress_segmentby = 'point_id')");
+      }
 
+      // Since pretty much every non-insert query we do is based on these three columns, 
+      // create an additional index. Note that this is an expensive operation when using
+      // timescaledb so we use a special optimisation in that case.
+
+      itsLogger.debug("createTables: Creating index idx_archive_point_source_ts");
+      if (theirUseTimescaleDB) {
+        stmt.execute( "CREATE INDEX IF NOT EXISTS idx_archive_point_source_ts ON " +
+                      "archive (point_id, source, ts) " +
+                      "WITH (timescaledb.transaction_per_chunk)"
+        );
+      } else {
+        stmt.execute( "CREATE INDEX IF NOT EXISTS idx_archive_point_source_ts ON " +
+                      "archive (point_id, source, ts)"
+        );
+      }
     } catch (Exception e) {
       itsLogger.error("createTables: " + e);
     }

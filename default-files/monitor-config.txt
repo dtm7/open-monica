@@ -52,6 +52,7 @@ ArchiveNumThreads 1
 #PsqlMaxBufferSize 1000000
 #PgsqlPurgeEnabled true
 #PsqlMaxNumRecords 250000
+#PsqlEnableTimescaleDB false
 
 # Max number of records to accumulate before flushing to disk
 MaxFlushSize 50
