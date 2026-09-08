@@ -694,12 +694,13 @@ public class PointArchiverPostgresql extends PointArchiver {
         stmt.execute("CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE");
         stmt.execute("CREATE EXTENSION IF NOT EXISTS timescaledb_toolkit CASCADE");
         
-        // Enable hypertable & compression on archive table
+        // Create timescaledb "hypertable" from archive table. Split into chunks of 7 days
         itsLogger.debug("createTables: Creating timescaledb hypertable");
-        stmt.execute("SELECT create_hypertable('archive', by_range('ts'), if_not_exists => true)");
-        // NB: We may want to segment by 'source' too - this mirrors what monica does in
-        // the ASCII archiver should make purging data far less expensive
-        stmt.execute("ALTER TABLE archive SET (timescaledb.compress, timescaledb.compress_segmentby = 'point_id')");
+        stmt.execute("SELECT create_hypertable('archive', by_range('ts'), chunk_time_interval => INTERVAL '7 days', if_not_exists => true)");
+
+        // Enable compression on archive hypertable. Compress data after it's 7 days old
+        stmt.execute("ALTER TABLE archive SET (timescaledb.compress, timescaledb.compress_segmentby = 'point_id, source')");
+        stmt.execute("SELECT add_compression_policy('archive', INTERVAL '7 days', if_not_exists => true)");
       }
 
       // Since pretty much every non-insert query we do is based on these three columns, 
