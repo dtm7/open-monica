@@ -699,6 +699,7 @@ public class PointArchiverPostgresql extends PointArchiver {
         stmt.execute("SELECT create_hypertable('archive', by_range('ts'), chunk_time_interval => INTERVAL '7 days', if_not_exists => true)");
 
         // Enable compression on archive hypertable. Compress data after it's 7 days old
+        itsLogger.debug("createTables: Enabling timescaledb hypertable columnar compression");
         stmt.execute("ALTER TABLE archive SET (timescaledb.compress, timescaledb.compress_segmentby = 'point_id, source')");
         stmt.execute("SELECT add_compression_policy('archive', INTERVAL '7 days', if_not_exists => true)");
       }
