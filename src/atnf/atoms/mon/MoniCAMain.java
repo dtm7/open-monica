@@ -316,11 +316,21 @@ public class MoniCAMain {
     // Create the archiver to store historical data
     theirLogger.debug("Creating PointArchiver");
     
+    String archiverprop = MonitorConfig.getProperty("Archiver");
+    if (archiverprop == null || archiverprop.trim().isEmpty()) {
+      theirLogger.fatal("No Archiver specified in configuration");
+      return false;
+    }
+
     // Check the requested archivers won't result in duplicate archivers writing the same data
-    String[] archivers = MonitorConfig.getProperty("Archiver").split(",");
+    String[] archivers = archiverprop.split(",");
     HashSet<String> archiverset = new HashSet<String>();
     for (int i = 0; i < archivers.length; i++) {
       archivers[i] = archivers[i].trim();
+      if (archivers[i].isEmpty()) {
+        theirLogger.fatal("Empty entry in Archiver list \"" + archiverprop + "\"");
+        return false;
+      }
       if (!archiverset.add(archivers[i])) {
         theirLogger.fatal("Archiver " + archivers[i] + " is specified more than once");
         return false;
@@ -334,7 +344,13 @@ public class MoniCAMain {
     Vector<PointArchiver> va = new Vector<>();
     try {
       for (String a : archivers) {
-        Class archiverClass = Class.forName("atnf.atoms.mon.archiver.PointArchiver" + a);
+        Class archiverClass;
+        try {
+          archiverClass = Class.forName("atnf.atoms.mon.archiver.PointArchiver" + a);
+        } catch (ClassNotFoundException e) {
+          theirLogger.fatal("Unknown Archiver type \"" + a + "\"");
+          return false;
+        }
         PointArchiver pa = (PointArchiver) (archiverClass.newInstance());
         va.add(pa);
       }
