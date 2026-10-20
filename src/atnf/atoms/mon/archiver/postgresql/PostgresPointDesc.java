@@ -9,9 +9,9 @@ package atnf.atoms.mon.archiver.postgresql;
 import java.util.Objects;
 
 public class PostgresPointDesc {
-    private final String name;
-    private final String dataType;
-    private final String units;
+    public final String name;
+    public final String dataType;
+    public final String units;
 
     public PostgresPointDesc(String name, String dataType, String units) {
         this.name = name;
