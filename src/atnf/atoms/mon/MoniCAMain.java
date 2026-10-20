@@ -316,9 +316,24 @@ public class MoniCAMain {
     // Create the archiver to store historical data
     theirLogger.debug("Creating PointArchiver");
     
+    // Check the requested archivers won't result in duplicate archivers writing the same data
+    String[] archivers = MonitorConfig.getProperty("Archiver").split(",");
+    HashSet<String> archiverset = new HashSet<String>();
+    for (int i = 0; i < archivers.length; i++) {
+      archivers[i] = archivers[i].trim();
+      if (!archiverset.add(archivers[i])) {
+        theirLogger.fatal("Archiver " + archivers[i] + " is specified more than once");
+        return false;
+      }
+    }
+    if (archiverset.contains("InfluxDb") && archiverset.contains("ASCII") && PointArchiverInfluxDb.chainsToASCII()) {
+      theirLogger.fatal("Archivers InfluxDb and ASCII can't both be used when InfluxChainToASCII is true, remove one or disable chaining");
+      return false;
+    }
+
     Vector<PointArchiver> va = new Vector<>();
     try {
-      for (String a : MonitorConfig.getProperty("Archiver").split(",")) {
+      for (String a : archivers) {
         Class archiverClass = Class.forName("atnf.atoms.mon.archiver.PointArchiver" + a);
         PointArchiver pa = (PointArchiver) (archiverClass.newInstance());
         va.add(pa);

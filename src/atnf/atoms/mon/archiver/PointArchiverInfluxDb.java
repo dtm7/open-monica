@@ -94,6 +94,13 @@ public class PointArchiverInfluxDb extends PointArchiver {
     private static Boolean theirChainToASCII = false;
 
     /**
+     * Indicates whether InfluxDB archivers will chain their own ASCII archiver.
+     */
+    public static boolean chainsToASCII() {
+        return theirChainToASCII;
+    }
+
+    /**
      * Tag Extractor for generating Influxdb Tags
      */
     private Map<String, TagExtractor> itsTags = null;
