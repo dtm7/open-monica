@@ -341,16 +341,27 @@ public class MoniCAMain {
       return false;
     }
 
+    // Resolve all archiver classes before creating any, since archiver constructors start
+    // threads which would otherwise keep the JVM alive if a later archiver name is invalid
+    Vector<Class> archiverclasses = new Vector<Class>();
+    for (String a : archivers) {
+      Class archiverClass;
+      try {
+        archiverClass = Class.forName("atnf.atoms.mon.archiver.PointArchiver" + a, false, MoniCAMain.class.getClassLoader());
+      } catch (ClassNotFoundException e) {
+        theirLogger.fatal("Unknown Archiver type \"" + a + "\"");
+        return false;
+      }
+      if (!PointArchiver.class.isAssignableFrom(archiverClass)) {
+        theirLogger.fatal("Unknown Archiver type \"" + a + "\"");
+        return false;
+      }
+      archiverclasses.add(archiverClass);
+    }
+
     Vector<PointArchiver> va = new Vector<PointArchiver>();
     try {
-      for (String a : archivers) {
-        Class archiverClass;
-        try {
-          archiverClass = Class.forName("atnf.atoms.mon.archiver.PointArchiver" + a);
-        } catch (ClassNotFoundException e) {
-          theirLogger.fatal("Unknown Archiver type \"" + a + "\"");
-          return false;
-        }
+      for (Class archiverClass : archiverclasses) {
         PointArchiver pa = (PointArchiver) (archiverClass.newInstance());
         va.add(pa);
       }
