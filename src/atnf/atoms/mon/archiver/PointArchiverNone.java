@@ -23,6 +23,11 @@ public class PointArchiverNone extends PointArchiver {
     super();
   }
 
+  /** This archiver stores nothing so cannot answer queries. */
+  public boolean supportsQueries() {
+    return false;
+  }
+
   /**
    * Purge all data for the given point that is older than the specified age in days.
    * 

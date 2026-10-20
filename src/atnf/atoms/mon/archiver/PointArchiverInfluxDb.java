@@ -298,6 +298,13 @@ public class PointArchiverInfluxDb extends PointArchiver {
     }
 
     /**
+     * Queries are only supported via the chained ASCII archiver.
+     */
+    public boolean supportsQueries() {
+        return itsChainedArchiver != null;
+    }
+
+    /**
      * Extract data from the archive with no undersampling.
      *
      * @param pm    Point to extract data for.

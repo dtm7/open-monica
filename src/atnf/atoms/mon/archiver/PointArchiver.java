@@ -84,6 +84,24 @@ public abstract class PointArchiver extends Thread {
     return theirArchivers.firstElement();
   }
 
+  /**
+   * Get the archiver which should be used to satisfy data queries. This is the first configured archiver which is able to
+   * answer queries, or the first archiver if none can.
+   */
+  public static synchronized PointArchiver getQueryPointArchiver() {
+    for (PointArchiver a : theirArchivers) {
+      if (a.supportsQueries()) {
+        return a;
+      }
+    }
+    return theirArchivers.firstElement();
+  }
+
+  /** Indicates whether this archiver is able to return historical data via the extract/getPreceding/getFollowing methods. */
+  public boolean supportsQueries() {
+    return true;
+  }
+
   /** Get the maximum number of records that should be returned to a single archive query. */
   public int getMaxNumRecords() {
     return MAXNUMRECORDS;

@@ -333,7 +333,13 @@ public class MoniCAMain {
     for (PointArchiver pa : PointArchiver.getPointArchivers()) {
       // Start archive thread
       ((Thread) pa).start();
-      theirLogger.warn("PointArchiver " + pa.getClass().getName() + " started");      
+      theirLogger.warn("PointArchiver " + pa.getClass().getName() + " started");
+    }
+    PointArchiver qa = PointArchiver.getQueryPointArchiver();
+    if (qa.supportsQueries()) {
+      theirLogger.info("Archive queries will be satisfied by " + qa.getClass().getName());
+    } else {
+      theirLogger.warn("No configured archiver supports queries, archive data requests will return nothing");
     }
     
     String confdir = MonitorConfig.getProperty("ConfDir");
