@@ -82,20 +82,23 @@ class MoniCAInternal extends ExternalSystem {
           }
         }
         else if (thistrans.getString().startsWith("InfluxDB")) {
-          for(PointArchiver p : PointArchiver.getPointArchivers()) {
-            if (!(p instanceof PointArchiverInfluxDb)) {
-              // InfluxDB archiver not active so ignore
-              continue;
+          PointArchiverInfluxDb influx = null;
+          for (PointArchiver p : PointArchiver.getPointArchivers()) {
+            if (p instanceof PointArchiverInfluxDb) {
+              influx = (PointArchiverInfluxDb) p;
+              break;
             }
-
-            PointArchiverInfluxDb influx = (PointArchiverInfluxDb) p;
-            if (thistrans.getString().equals("InfluxDB_UnmappedPoints")) {
-              pd.setData(influx.getUnmappedPoints());
-            } else if (thistrans.getString().equals("InfluxDB_IngestRate")) {
-              pd.setData(influx.getIngestRate());
-            } else if (thistrans.getString().equals("InfluxDB_IngestLatency")) {
-              pd.setData(influx.getIngestLatency());
-            }
+          }
+          if (influx == null) {
+            // InfluxDB archiver not active so ignore these points
+            continue;
+          }
+          if (thistrans.getString().equals("InfluxDB_UnmappedPoints")) {
+            pd.setData(influx.getUnmappedPoints());
+          } else if (thistrans.getString().equals("InfluxDB_IngestRate")) {
+            pd.setData(influx.getIngestRate());
+          } else if (thistrans.getString().equals("InfluxDB_IngestLatency")) {
+            pd.setData(influx.getIngestLatency());
           }
         }
 
