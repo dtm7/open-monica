@@ -412,13 +412,49 @@ public class MoniCAMain {
     // Set the encryption keys
     KeyKeeper.getExponent();
 
+    // Max time to wait for the archivers to flush on shutdown
+    long flushtimeout;
+    try {
+      flushtimeout = Long.parseLong(MonitorConfig.getProperty("ArchiveFlushTimeout", "60")) * 1000;
+    } catch (Exception e) {
+      theirLogger.warn("Error parsing ArchiveFlushTimeout configuration parameter: " + e);
+      flushtimeout = 60000;
+    }
+    final long flushtimeoutms = flushtimeout;
+
     // Add shutdown listener to flush archive
     Runtime.getRuntime().addShutdownHook(new Thread() {
       public void run() {
         try {
           ExternalSystem.stopAll();
-          for (PointArchiver p : PointArchiver.getPointArchivers()) {
-            p.flushArchive();
+          // Flush all archivers in parallel, but don't wait forever for a stuck one
+          long deadline = System.currentTimeMillis() + flushtimeoutms;
+          Vector<Thread> flushers = new Vector<Thread>();
+          for (final PointArchiver p : PointArchiver.getPointArchivers()) {
+            if (!p.isAlive()) {
+              theirLogger.error("PointArchiver " + p.getClass().getName() + " is not running, unflushed data will be lost");
+              continue;
+            }
+            Thread t = new Thread("Flush " + p.getClass().getSimpleName()) {
+              public void run() {
+                p.flushArchive();
+              }
+            };
+            t.setDaemon(true);
+            t.start();
+            flushers.add(t);
+          }
+          for (Thread t : flushers) {
+            long remaining = deadline - System.currentTimeMillis();
+            try {
+              if (remaining > 0) {
+                t.join(remaining);
+              }
+            } catch (InterruptedException e) {
+            }
+            if (t.isAlive()) {
+              theirLogger.error(t.getName() + " did not complete within " + (flushtimeoutms / 1000) + "s, unflushed data may be lost");
+            }
           }
         } finally {
           LogManager.shutdown();

@@ -9,13 +9,17 @@
 ##############################
 # ARCHIVER OPTIONS:
 # Type of archiver to use. Multiple archivers are possible by specifying
-# them as a comma-separated list. Only one of each type is supported. The 
-# first archiver specified is always used to satisfy data queries.
+# them as a comma-separated list. Only one of each type is supported. Data
+# queries are satisfied by the first archiver in the list which supports
+# queries (InfluxDb only does so when InfluxChainToASCII is true). InfluxDb
+# and ASCII can't be listed together if InfluxChainToASCII is true.
 #Archiver InfluxDb,ASCII
 Archiver ASCII
 # Max archive records to be returned for a single query
 # This is to prevent server CPU/memory saturation
 ArchiveMaxRecords 8192
+# Max time (in secs) to wait for the archivers to flush their data on shutdown
+ArchiveFlushTimeout 60
 
 # Options specific to the ASCII archiver:
 # Where to save archived data

@@ -46,10 +46,10 @@ public abstract class PointArchiver extends Thread {
   protected static final long theirMaxAgeOffset = 60000000;
 
   /** Flag set when MoniCA has been requested to shut down. */
-  protected boolean itsShuttingDown = false;
+  protected volatile boolean itsShuttingDown = false;
 
   /** Flag to indicate the the archive flush on shutdown is now complete. */
-  protected boolean itsFlushComplete = false;
+  protected volatile boolean itsFlushComplete = false;
   
   /** Static block to parse flush parameters. */
   static {
