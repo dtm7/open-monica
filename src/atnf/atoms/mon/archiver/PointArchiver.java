@@ -21,8 +21,8 @@ import org.apache.log4j.Logger;
  * @author David Brodrick
  */
 public abstract class PointArchiver extends Thread {
-  /** Archiver used for archiving data to disk, database, etc. */
-  private static Vector<PointArchiver> theirArchivers;
+  /** Archivers used for archiving data to disk, database, etc. Never null and not modifiable. */
+  private static List<PointArchiver> theirArchivers = Collections.emptyList();
 
   /** Logger. */
   protected Logger itsLogger = Logger.getLogger(getClass().getName());
@@ -69,24 +69,28 @@ public abstract class PointArchiver extends Thread {
     theirMaxAge = RelTime.factory(numsecs * -1000000);
   }
 
-  /** Specify the archiver to be used for archiving all data. */
-  public static synchronized void setPointArchivers(Vector<PointArchiver> archivers) {
-    theirArchivers = archivers;
+  /** Specify the archivers to be used for archiving all data. A copy of the list is taken. */
+  public static synchronized void setPointArchivers(List<PointArchiver> archivers) {
+    if (archivers == null) {
+      theirArchivers = Collections.emptyList();
+    } else {
+      theirArchivers = Collections.unmodifiableList(new ArrayList<PointArchiver>(archivers));
+    }
   }
 
-  // For now this is a bit of a compatibility method, eventually I'd like to make
-  // everything that interacts with the archivers multi archiver aware
-  public static synchronized Vector<PointArchiver> getPointArchivers() {
+  /** Get the unmodifiable list of archivers, which will be empty if none have been set. */
+  public static synchronized List<PointArchiver> getPointArchivers() {
     return theirArchivers;
   }
 
+  /** Get the first configured archiver, or null if there are none. */
   public static synchronized PointArchiver getFirstPointArchiver() {
-    return theirArchivers.firstElement();
+    return theirArchivers.isEmpty() ? null : theirArchivers.get(0);
   }
 
   /**
    * Get the archiver which should be used to satisfy data queries. This is the first configured archiver which is able to
-   * answer queries, or the first archiver if none can.
+   * answer queries, or the first archiver if none can, or null if there are no archivers.
    */
   public static synchronized PointArchiver getQueryPointArchiver() {
     for (PointArchiver a : theirArchivers) {
@@ -94,7 +98,7 @@ public abstract class PointArchiver extends Thread {
         return a;
       }
     }
-    return theirArchivers.firstElement();
+    return getFirstPointArchiver();
   }
 
   /** Indicates whether this archiver is able to return historical data via the extract/getPreceding/getFollowing methods. */
@@ -180,7 +184,7 @@ public abstract class PointArchiver extends Thread {
                 // Was no data on disk
                 res = new Vector<PointData>(buffer.size());
               }
-              if (res.size() < PointArchiver.getFirstPointArchiver().getMaxNumRecords()) {
+              if (res.size() < getMaxNumRecords()) {
                 // Disk query wasn't clipped at the memory limit, therefore append buffer data
                 for (int i = 0; i < buffer.size() && buffer.get(i).getTimestamp().isBeforeOrEquals(end); i++) {
                   res.add(buffer.get(i));
@@ -527,14 +531,10 @@ public abstract class PointArchiver extends Thread {
         String[] allnames = PointDescription.getAllUniqueNames();
         for (int i = 0; i < allnames.length; i++) {
           PointDescription point = PointDescription.getPoint(allnames[i]);
-          if (point != null && point.getArchiveLongevity() > 0) {
-            for (PointArchiver a : point.getArchivers()) {
-              // Only purge an archiver if that archiver is our parent object
-              if (a == itsOwner ) {
-                itsLogger.trace("Purging old archive data for " + point.getFullName());
-                itsOwner.purgeOldData(point);
-              }
-            }  
+          // Only purge if the point is archived by our parent archiver
+          if (point != null && point.getArchiveLongevity() > 0 && point.getArchivers().contains(itsOwner)) {
+            itsLogger.trace("Purging old archive data for " + point.getFullName());
+            itsOwner.purgeOldData(point);
           }
           try {
             // Short sleep so as not to hog resources

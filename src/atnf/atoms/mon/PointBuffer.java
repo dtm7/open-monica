@@ -178,7 +178,10 @@ public class PointBuffer {
 
     // Then request rest of data from disk archive
     PointArchiver arc = PointArchiver.getQueryPointArchiver();
-    Vector<PointData> arcdata = arc.extract(pm, start_time, end_time);
+    Vector<PointData> arcdata = null;
+    if (arc != null) {
+      arcdata = arc.extract(pm, start_time, end_time);
+    }
 
     if (arcdata == null) {
       arcdata = new Vector<PointData>(); // Ensure not null
@@ -320,7 +323,9 @@ public class PointBuffer {
     if (res == null) {
       // The data is no longer buffered - need to ask the archive
       PointArchiver arc = PointArchiver.getQueryPointArchiver();
-      res = arc.getPreceding(pm, timestamp);
+      if (arc != null) {
+        res = arc.getPreceding(pm, timestamp);
+      }
     }
 
     return res;
@@ -376,7 +381,9 @@ public class PointBuffer {
     if (res == null) {
       // The data may not be buffered so ask the archive
       PointArchiver arc = PointArchiver.getQueryPointArchiver();
-      res = arc.getFollowing(pm, timestamp);
+      if (arc != null) {
+        res = arc.getFollowing(pm, timestamp);
+      }
       if (res == null) {
         // Nothing from archive so oldest data in buffer is best match
         res = temp;
