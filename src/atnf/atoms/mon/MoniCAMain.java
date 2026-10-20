@@ -341,7 +341,7 @@ public class MoniCAMain {
       return false;
     }
 
-    Vector<PointArchiver> va = new Vector<>();
+    Vector<PointArchiver> va = new Vector<PointArchiver>();
     try {
       for (String a : archivers) {
         Class archiverClass;
