@@ -320,7 +320,7 @@ public class PointArchiverPostgresql extends PointArchiver {
           String source = null;
           
           // Get (or create) the point_id
-          Integer point_id = getPointID(pm.getName(), data_type, pm.getUnits());
+          Integer point_id = getPointID(pm.getName(), data_type, value_column, pm.getUnits());
 
           if (point_id != null) {
             if (data.getName() == null || data.getName().isEmpty()) {
@@ -504,11 +504,43 @@ public class PointArchiverPostgresql extends PointArchiver {
     }
   }
 
+  private void createPointView(PostgresPointDesc point, String valueColumn, Integer dbPointID) {
+
+    try (Connection c = itsPgPool.getConnection()) {
+
+      if (!checkConnection(c)) {
+        itsLogger.error("getPointID: Database connection invalid");
+        return;
+      }
+
+      // Can't do this easily with prepared statements, unfortunately
+      String sql = "CREATE OR REPLACE VIEW \"" + point.name + "\" AS " +
+                   "SELECT source, ts, bat, type, units, " + valueColumn + " AS value FROM " +
+                   "archive INNER JOIN points ON points.id = archive.point_id " +
+                   "WHERE points.id = " + dbPointID;
+
+      try (PreparedStatement p = c.prepareStatement(sql)) {
+        itsLogger.debug("createPointView: Statement " + p);
+        p.executeUpdate();
+      } catch (SQLException e) {
+        // At least one potential error case here is if the view already
+        // exists in a form that can't be updated
+        itsLogger.error("createPointView: Error creating point view " + point.name + ": " + e.getMessage());      
+      }
+    } catch (SQLException e) {
+      itsLogger.error("createPointView: Error getting new connection for adding point view: " + e.getMessage());
+    }
+    return;
+  }
+
   // Try and get a pointID out of the in memory map. If it's not in the
   // in memory map, see if it's in the database. If it's not in the database
   // yet, add an entry in the "points" table.
+  // 
+  // Since we also need real data before we can create views for each point
+  // handle that in here too
 
-  private Integer getPointID(String name, String dataType, String units) {
+  private Integer getPointID(String name, String dataType, String valueColumn, String units) {
     PostgresPointDesc pgpd = new PostgresPointDesc(name, dataType, units);
     Integer point_id = itsPgPointMap.get(pgpd);
     String sql = null;
@@ -546,7 +578,12 @@ public class PointArchiverPostgresql extends PointArchiver {
 
       // Try again
       point_id = itsPgPointMap.get(pgpd);
-      if (point_id != null) return point_id;
+      
+      if (point_id != null) {
+        // Also create an equivalent point view
+        createPointView(pgpd, valueColumn, point_id);
+        return point_id;
+      }
 
       itsLogger.debug(String.format("getPointID: Point ('%s', '%s', '%s') not found in database, inserting", name, dataType, units));
       
@@ -570,7 +607,9 @@ public class PointArchiverPostgresql extends PointArchiver {
       }
       
       // This time we return the final value
-      point_id = itsPgPointMap.get(pgpd);    
+      point_id = itsPgPointMap.get(pgpd);
+      // Also create an equivalent point view
+      createPointView(pgpd, valueColumn, point_id);      
     } catch (SQLException e) {
       itsLogger.error("getPointID: SQL Error looking up or creating new point_id: " + e.getMessage());
       point_id = null;
