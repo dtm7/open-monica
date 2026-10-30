@@ -307,6 +307,8 @@ java -DIce.MessageSizeMax=32768 -cp ${jarname} atnf.atoms.mon.gui.MonFrame
       <!-- JDBC driver for archiver.PointArchiverMySQL (loaded by
            DriverManager, not referenced directly) -->
       <file name="mysql-connector-java-5.1.16-bin.jar"/>
+      <!-- JDBC driver for archiver.PointArchiverPostgresql -->
+      <file name="postgresql-42.7.13.jar"/>
       <!-- org.influxdb: archiver.PointArchiverInfluxDb. The jars after it are
            needed by influxdb-java, not by open-monica directly -->
       <file name="influxdb-java-2.5.jar"/>
