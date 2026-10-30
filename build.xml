@@ -355,9 +355,8 @@ java -DIce.MessageSizeMax=32768 -cp ${jarname} atnf.atoms.mon.gui.MonFrame
     <file name="monitor-servers.txt"/>
     <!-- Plugin panel classes to preload: gui.MonPanel -->
     <file name="monitor-preloads.txt"/>
-    <!-- Logging configuration, in log4j 1 format, so it is only read when
-         run with -Dlog4j1.compatibility=true -->
-    <file name="log4j.properties"/>
+    <!-- Logging configuration -->
+    <file name="log4j2.xml"/>
   </filelist>
 
   <!-- Get list of 3rdParty jar files formatted for manifest file -->
