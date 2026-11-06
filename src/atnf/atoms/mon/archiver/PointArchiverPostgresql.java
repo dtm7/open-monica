@@ -100,6 +100,12 @@ public class PointArchiverPostgresql extends PointArchiver {
 
   private static boolean theirUseTimescaleDB = false;
 
+  /**
+   * Maximum time (ms) to spend writing buffered data to the database at shutdown.
+   * Anything still buffered after this is lost.
+   */
+  private static long theirShutdownTimeout = 60000;
+
   private String itsURL = null;
   /** The URL to connect to the server/database. */
   //protected String itsURL = "jdbc:mysql://localhost:3306/MoniCA?user=monica&tcpRcvBuf=100000&autoReconnect=true";
@@ -147,6 +153,12 @@ public class PointArchiverPostgresql extends PointArchiver {
     } catch (Exception e) {
       Logger.getLogger(PointArchiver.class.getName()).warn("Error parsing PsqlTimescaleDB configuration parameter: " + e);
     }
+
+    try {
+      theirShutdownTimeout = 1000L * Integer.parseInt(MonitorConfig.getProperty("PsqlShutdownTimeout", "60"));
+    } catch (Exception e) {
+      Logger.getLogger(PointArchiver.class.getName()).warn("Error parsing PsqlShutdownTimeout configuration parameter: " + e);
+    }
   }
 
   /** Constructor. */
@@ -176,7 +188,7 @@ public class PointArchiverPostgresql extends PointArchiver {
     createTables();
 
     // Configure and start the batch writer process
-    itsWriter = new PostgresBatchWriter(itsPgPool, theirMaxBatchAge, theirMaxBatchSize, theirMaxBufferSize);
+    itsWriter = new PostgresBatchWriter(itsPgPool, theirMaxBatchAge, theirMaxBatchSize, theirMaxBufferSize, theirShutdownTimeout);
     itsWriter.start();
   }
 

@@ -26,12 +26,24 @@ public class PostgresBatchWriter {
   private final int maxBatchAge;
   private final int maxBatchSize;
   private final int maxBufferSize;
+  private final long shutdownTimeout;
 
-  public PostgresBatchWriter(javax.sql.DataSource dataSource, int maxBatchAge, int maxBatchSize, int maxBufferSize) {
+  // Pause between drain attempts at shutdown when the previous attempt made no progress
+  private static final long SHUTDOWN_RETRY_PAUSE_MS = 1000;
+
+  /**
+   * @param maxBatchAge     Maximum time (ms) between scheduled flushes
+   * @param maxBatchSize    Maximum number of points written per batch
+   * @param maxBufferSize   Maximum number of points held in memory; oldest are dropped beyond this
+   * @param shutdownTimeout Maximum time (ms) to spend draining the buffer at shutdown
+   */
+  public PostgresBatchWriter(javax.sql.DataSource dataSource, int maxBatchAge, int maxBatchSize, int maxBufferSize,
+                             long shutdownTimeout) {
     this.dataSource = dataSource;
     this.maxBatchAge = maxBatchAge;
     this.maxBatchSize = maxBatchSize;
     this.maxBufferSize = maxBufferSize;
+    this.shutdownTimeout = shutdownTimeout;
   }
 
   public void start() {
@@ -50,27 +62,79 @@ public class PostgresBatchWriter {
     // Add the new point to the end of the buffer
     buffer.addLast(data);
 
-    // trigger early flush if threshold reached
-    if (buffer.size() >= maxBatchSize) writerPool.submit(this::flushDB);
+    // trigger early flush if threshold reached. Once shutdown() has been called the pool
+    // rejects new tasks; the shutdown drain will pick up anything still in the buffer.
+    if (buffer.size() >= maxBatchSize && !writerPool.isShutdown()) {
+      try {
+        writerPool.submit(this::flushDB);
+      } catch (RejectedExecutionException e) {
+        // Lost the race with shutdown(); nothing to do
+      }
+    }
   }
 
-  // Do an orderly shutdown of the postgres batch writer. First stop any existing
-  // threads, then do a final (synchronous) database flush.
+  // Do an orderly shutdown of the postgres batch writer. First stop the background
+  // flush threads, then drain the buffer synchronously until it is empty or
+  // ${shutdownTimeout} ms have passed.
 
   public void shutdown() {
     itsLogger.info("shutdown: Shutting down postgres writer threads");
+    scheduler.shutdown();
     writerPool.shutdown();
     try {
-      // Wait for the batch delay time for any threads to terminate
+      // Wait for the batch delay time for any in-progress flushes to finish
+      if (!scheduler.awaitTermination(maxBatchAge, TimeUnit.MILLISECONDS)) {
+        scheduler.shutdownNow();
+      }
       if (!writerPool.awaitTermination(maxBatchAge, TimeUnit.MILLISECONDS)) {
         writerPool.shutdownNow();
       }
     } catch (InterruptedException e) {
+      scheduler.shutdownNow();
       writerPool.shutdownNow();
       Thread.currentThread().interrupt();
     }
-    // Flush any remaining data on the queue to the database
-    flushDB();
+
+    drainBuffer();
+  }
+
+  // Flush the buffer to the database until it is empty or the shutdown timeout expires.
+  // Progress is measured by the buffer shrinking: a batch that fails with a retryable
+  // error is put back on the queue, so it does not count as progress. Note the deadline
+  // is checked between attempts, so a slow connection attempt (driver connect timeout)
+  // can overrun it somewhat.
+
+  private void drainBuffer() {
+    long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(shutdownTimeout);
+    int remaining = buffer.size();
+    int initial = remaining;
+
+    if (remaining > 0) {
+      itsLogger.info("shutdown: Flushing " + remaining + " buffered points to database (timeout " +
+                     (shutdownTimeout / 1000) + " s)");
+    }
+
+    while (remaining > 0 && System.nanoTime() < deadline) {
+      flushDB();
+      int now = buffer.size();
+      if (now >= remaining) {
+        // No progress (database unreachable, or batch re-queued); wait before retrying
+        try {
+          Thread.sleep(SHUTDOWN_RETRY_PAUSE_MS);
+        } catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+          break;
+        }
+      }
+      remaining = now;
+    }
+
+    if (remaining > 0) {
+      itsLogger.error("shutdown: Could not write " + remaining + " of " + initial +
+                      " buffered points to database before shutdown; these points are lost");
+    } else if (initial > 0) {
+      itsLogger.info("shutdown: All " + initial + " buffered points written to database");
+    }
   }
 
   // Every insert statement should be the same format so the SQL driver can batch all the inserts

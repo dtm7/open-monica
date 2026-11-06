@@ -53,6 +53,8 @@ ArchiveNumThreads 1
 #PgsqlPurgeEnabled true
 #PsqlMaxNumRecords 250000
 #PsqlEnableTimescaleDB false
+# Maximum time (in seconds) to spend writing buffered data at shutdown
+#PsqlShutdownTimeout 60
 
 # Max number of records to accumulate before flushing to disk
 MaxFlushSize 50
