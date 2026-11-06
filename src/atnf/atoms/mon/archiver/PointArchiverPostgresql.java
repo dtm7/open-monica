@@ -106,6 +106,11 @@ public class PointArchiverPostgresql extends PointArchiver {
    */
   private static long theirShutdownTimeout = 60000;
 
+  /**
+   * Number of threads writing full batches to the database in parallel.
+   */
+  private static int theirWriterThreads = 1;
+
   private String itsURL = null;
   /** The URL to connect to the server/database. */
   //protected String itsURL = "jdbc:mysql://localhost:3306/MoniCA?user=monica&tcpRcvBuf=100000&autoReconnect=true";
@@ -159,6 +164,12 @@ public class PointArchiverPostgresql extends PointArchiver {
     } catch (Exception e) {
       Logger.getLogger(PointArchiver.class.getName()).warn("Error parsing PsqlShutdownTimeout configuration parameter: " + e);
     }
+
+    try {
+      theirWriterThreads = Integer.parseInt(MonitorConfig.getProperty("PsqlWriterThreads", "1"));
+    } catch (Exception e) {
+      Logger.getLogger(PointArchiver.class.getName()).warn("Error parsing PsqlWriterThreads configuration parameter: " + e);
+    }
   }
 
   /** Constructor. */
@@ -188,7 +199,8 @@ public class PointArchiverPostgresql extends PointArchiver {
     createTables();
 
     // Configure and start the batch writer process
-    itsWriter = new PostgresBatchWriter(itsPgPool, theirMaxBatchAge, theirMaxBatchSize, theirMaxBufferSize, theirShutdownTimeout);
+    itsWriter = new PostgresBatchWriter(itsPgPool, theirMaxBatchAge, theirMaxBatchSize, theirMaxBufferSize, theirShutdownTimeout,
+                                       theirWriterThreads);
     itsWriter.start();
   }
 

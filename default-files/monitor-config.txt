@@ -55,6 +55,8 @@ ArchiveNumThreads 1
 #PsqlEnableTimescaleDB false
 # Maximum time (in seconds) to spend writing buffered data at shutdown
 #PsqlShutdownTimeout 60
+# Number of threads writing batches to the database in parallel
+#PsqlWriterThreads 1
 
 # Max number of records to accumulate before flushing to disk
 MaxFlushSize 50
