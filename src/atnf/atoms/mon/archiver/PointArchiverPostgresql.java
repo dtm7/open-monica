@@ -704,9 +704,9 @@ public class PointArchiverPostgresql extends PointArchiver {
       // Create the table which holds our point metadata
       stmt.execute( "CREATE table IF NOT EXISTS points ("+
                     "id SERIAL PRIMARY KEY, "+
-                    "name VARCHAR(100), " +
-                    "units VARCHAR(20), " +
-                    "type VARCHAR(10), " +
+                    "name TEXT, " +
+                    "units TEXT, " +
+                    "type TEXT, " +
                     "UNIQUE(name, units, type))"
       );
 
@@ -715,12 +715,12 @@ public class PointArchiverPostgresql extends PointArchiver {
       stmt.execute( "CREATE table IF NOT EXISTS archive (" +
                     "ts TIMESTAMPTZ, " +
                     "BAT BIGINT, " +
-                    "source VARCHAR(20), " +
+                    "source TEXT, " +
                     "point_id INTEGER REFERENCES points(id), " +
                     "val_float DOUBLE PRECISION, " + 
                     "val_bigint BIGINT, " +
                     "val_int INTEGER, " +
-                    "val_string VARCHAR(255), " +
+                    "val_string TEXT, " +
                     "val_bool BOOLEAN)"
       );
 
